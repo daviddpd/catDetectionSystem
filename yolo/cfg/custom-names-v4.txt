@@ -1,0 +1,9 @@
+opossum
+skunk
+raccoon
+cat-olive
+cat-bean
+cat-domino
+cat
+dog
+#ReferenceFrame

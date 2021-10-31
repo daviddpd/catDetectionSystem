@@ -11,6 +11,7 @@ import uuid
 import hashlib
 import shutil
  
+ 
 def get_checksum(filename, hash_function):
     hash_function = hash_function.lower() 
     with open(filename, "rb") as f:
@@ -27,6 +28,11 @@ pp = pprint.PrettyPrinter(indent=4)
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--dir', help='directory to scane for XML files')
 parser.add_argument('--classes', help='text file of strings of the class names')
+parser.add_argument('--getClasses', help='get classes from XML files', default=False, action='store_true')
+parser.add_argument('--move', help='Move instead of copy', default=False, action='store_true')
+
+parser.add_argument('--dryrun', help='do not write or modifiy any files', default=False, action='store_true')
+
 #parser.add_argument('--versionstr', help='Version/name of the training set')
 
 args, _ = parser.parse_known_args()
@@ -47,7 +53,9 @@ for c in classNames:
 
 xmlfiles = []
 for root, dirs, files in os.walk(args.dir, topdown=False):
-   for name in files:
+    if dirs == ".DS_Store":
+        continue
+    for name in files:
       if re.search("\.xml$", name):
           #print(os.path.join(root, name))
           xmlfiles.append(os.path.join(root, name))
@@ -110,13 +118,19 @@ for xmlfile in xmlfiles:
             except KeyError:
                 imageClasses[o['name']] = 1
         except KeyError:
+            if args.getClasses: 
+                classhash[o['name']] = -1
+                imageClasses[o['name']] = 1
             continue
-        data  += "{} {} {} {} {}\n".format( c,  x/width, y/height,  w/width,  h/height)
+        if re.search("^#", o['name']):
+            data += "\n"
+        else:
+            data  += "{} {} {} {} {}\n".format( c,  x/width, y/height,  w/width,  h/height)
         if re.search("^cat-.*", o['name']):
             c = classhash["cat"]    
             data  += "{} {} {} {} {}\n".format( c,  x/width, y/height,  w/width,  h/height)
             classcounts["cat"] += 1
-    if len(data) > 0:
+    if len(data) > 0 and not args.dryrun:
         #print (" === " + data)
         f = open(txtfile,'w')
         f.write(data)
@@ -129,42 +143,65 @@ for xmlfile in xmlfiles:
         if ( i > AminialInt ):
             imageAminial = ic
             AminialInt = i            
-    u = uuid.uuid1()    
-    cs = get_checksum(jpgfile, "md5")
+    cs="01234567890123456789012345678901"
+    if not args.dryrun:
+        cs = get_checksum(jpgfile, "md5")
     # MD5-5c05-f7ca-cd5d-940f1d76f6-95e8-8ee79d
     # MD5-0123 4567 8901 2345678901 2345 678901
     #                 1          2           3    
     csfmt = ("{}-{}-{}-{}-{}-{}").format( cs[0:4],cs[4:8],cs[8:12],cs[12:22],cs[22:26],cs[26:32]  )    
-    print ( " %-80s : classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (xmlfile, len(imageClasses), imageAminial, csfmt, imageClasses)) 
-    bn = "custom_data/imagebyclass/" + imageAminial + "/" + csfmt
-    if len(imageAminial) > 0:
-        if not os.path.isfile(bn + ".jpg"):
-            try:
-                if not os.path.isfile(bn + ".txt"):
-                    shutil.copy2( txtfile, bn + ".txt" )
-                if not os.path.isfile(bn + ".jpg"):
-                    shutil.copy2( jpgfile, bn + ".jpg" )
-                if not os.path.isfile(bn + ".xml"):
-                    shutil.copy2( xmlfile, bn + ".xml" )
-            except FileNotFoundError:
-                pass
+    print ( " %-80s : classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (xmlfile.replace("/z/camera/communitycats/custom_data/imagebyclass", ""), len(imageClasses), imageAminial, csfmt, imageClasses)) 
+    bn = "/z/camera/communitycats/custom_data/imagebyclass/" + imageAminial + "/" + csfmt
+    bn_deleted = "/z/camera/communitycats/custom_data/disabled/deleted/" + csfmt
+    if AminialInt > -1 and not args.dryrun:
+        if not os.path.isfile(bn + ".jpg") and not os.path.isfile(bn + ".xml"):
+                if not os.path.isfile(bn + ".txt") and os.path.isfile(txtfile):
+                    try:
+                        if args.move:
+                            shutil.move( txtfile, bn + ".txt" )
+                        else:
+                            shutil.copy2( txtfile, bn + ".txt" )
+                    except Exception as e:
+                        print (" =ERROR=> copy/move :  " + txtfile)
+                        raise e 
+                if not os.path.isfile(bn + ".jpg") and os.path.isfile(jpgfile):
+                    try:
+                        if args.move:
+                            shutil.move( jpgfile, bn + ".jpg" )
+                        else:
+                            shutil.copy2( jpgfile, bn + ".jpg" )
+                    except Exception as e:
+                        print (" =ERROR=> copy/move :  " + jpgfile)
+                        raise e 
+                if not os.path.isfile(bn + ".xml") and os.path.isfile(xmlfile):
+                    try:
+                        if args.move:
+                            shutil.move( xmlfile, bn + ".xml" )
+                        else:
+                            shutil.copy2( xmlfile, bn + ".xml" )
+                    except Exception as e:
+                        print (" =ERROR=> copy/move :  " + xmlfile)
+                        raise e 
+    elif AminialInt == -1 and not args.dryrun and args.move:
+        exts = ( ".txt", ".jpg", ".xml")
+        for ext in exts:
+            if os.path.isfile(bn + ext):
+                try:
+                    print (" =MOVING TO DELETED=> :  " + bn + ext)
+                    shutil.move( bn + ext, bn_deleted + csfmt + ext )
+                except Exception as e:
+                    print (" =ERROR=> copy/move :  " + bn + ext)
+                    raise e 
 # /z/camera/communitycats/custom_data/images/imagebyclass
 #pp.pprint ( jpgfiles )
 #pp.pprint ( testfiles )
 pp.pprint (classcounts)
+pp.pprint (classhash)
 
 
-#f = open("custom_data/jpgfiles.txt",'w')
-#for data in jpgfiles:
-#   f.write(data + "\n")
-#f.close
+f = open("/z/camera/communitycats/custom_data/imagebyclass/train.txt",'w')
+for data in trainFiles:
+    f.write(data + "\n")
+f.close
 
 
-#custom_data/images/C3-Oct-0000/C3-2021-Oct-0000-frame-00000092.xml
-
-# f = open("custom_data/train.txt",'w')
-# for data in trainFiles:
-#     f.write(data + "\n")
-# f.close
-# 
-# 

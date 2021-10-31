@@ -16,13 +16,6 @@ pp = pprint.PrettyPrinter(indent=4)
 CONF_THRESH, NMS_THRESH = 0.9, 0.5
             
 classNames = []
-#classFile = "coco.names"
-#with open(classFile,"rt") as f:
-#    classNames = f.read().rstrip("\n").split("\n")
-
-#configPath = "ssd_mobilenet_v3_large_coco_2020_01_14.pbtxt"
-#weightsPath = "frozen_inference_graph.pb"
-
 soundMeow = "/z/camera/Meow-cat-sound-effect.mp3"
 pygame.mixer.init()
 pygame.mixer.music.load(soundMeow)
