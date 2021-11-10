@@ -1,5 +1,5 @@
 import simplexml
-import cv2 as cv
+import cv2
 import argparse
 import numpy as np
 import sys
@@ -88,8 +88,12 @@ for xmlfile in xmlfiles:
     # <width> : w / width
     # <height> : h / height
     
-    height = int(xml['annotation']['size']['height'])
-    width = int(xml['annotation']['size']['width'])
+    try:
+        height = int(xml['annotation']['size']['height'])
+        width = int(xml['annotation']['size']['width'])
+    except:
+        img = cv2.imread(jpgfile)
+        (height, width) = img.shape[:2]        
     data = ""
     objects = []
     try: 
