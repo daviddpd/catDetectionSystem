@@ -8,9 +8,14 @@ count=$(($count+1))
 echo $count > /z/camera/communitycats/referenceVideos/.count
 
 outfile=`printf "/z/camera/communitycats/referenceVideos/%04d-$file" $count`
+if [ "x$3" = "x" ]; then
+	to=
+else
+	to="-to $3"
+fi
 
 ffmpeg -y -hide_banner \
-	-ss $2 -to $3 \
+	-ss $2 ${to} \
 	-i $1 \
 	-c copy \
 	$outfile
