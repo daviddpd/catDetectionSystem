@@ -1,5 +1,6 @@
-import argparse
 import cv2
+import simplexml
+import argparse
 import time
 import os
 import pprint
@@ -16,7 +17,11 @@ pp = pprint.PrettyPrinter(indent=4)
 _pid  = os.getpid()
 _name = sys.argv[0]
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--uri', help='path to video file or rtsp ')
+parser.add_argument('--uri', help='path to video file or rtsp ', required=True)
+parser.add_argument('--writePath', help='path to save images', default="/z/camera/communitycats/custom_data/images-auto-extract")
+parser.add_argument('--writeImages', help='Write Images with Objects detected',  default=False, action='store_true')
+parser.add_argument('--writeImagesNotCats', help='Only write non-cat frames',  default=False, action='store_true')
+
 parser.add_argument('--name', help='Window Name', default=_name + ":" + str(_pid) )
 parser.add_argument('--conf', help='confidence threshold', default=0.9, type=float)
 parser.add_argument('--nms', help='NMS threshold', default=0.5 , type=float)
@@ -29,10 +34,17 @@ args, _ = parser.parse_known_args()
 
 framesIn  = queue.Queue(100)
 framesOut = queue.Queue(100)
+framesToWrite = queue.Queue(1000)
 classNames = []
 soundMeow = "/z/camera/Meow-cat-sound-effect.mp3"
-pygame.mixer.init()
-pygame.mixer.music.load(soundMeow)
+_pygame_noSound = False
+try:
+    pygame.mixer.init()
+    pygame.mixer.music.load(soundMeow)
+except:
+    _pygame_noSound = True
+    pass
+    
 
 cw = {}
 cw["yolo.416v3.64"] = {}
@@ -43,11 +55,16 @@ cw["yolo.416v3.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-n
 cw["yolo.416v4.64"] = {}
 cw["yolo.416v4.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v4-64.cfg"
 cw["yolo.416v4.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v4-64_final.weights"
-#cw["yolo.416v4.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v4-64_last.weights"
 cw["yolo.416v4.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-v4.txt"
 
+cw["yolo.416v5.64"] = {}
+cw["yolo.416v5.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v5-64.cfg"
+cw["yolo.416v5.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v5-64_final.weights"
+cw["yolo.416v5.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v5-64_last.weights"
+cw["yolo.416v5.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-v4.txt"
 
-pkgVer = "yolo.416v4.64"
+
+pkgVer = "yolo.416v5.64"
 
 classNamesToIds = {}
 
@@ -182,7 +199,7 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
                         className = " - "
                         classId = -1
                         is_empty = True
-                        _draw_color = colorsPencils['lead']                        
+                        _draw_color = colorsPencils['lead']
             except IndexError:
                 print("IndexError");
             try:
@@ -198,7 +215,7 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
                     cv2.rectangle(img, (x, y), (x + w, y + h), _draw_color, 2)
                     labelx = x + 10
                     if re.search("^cat-", className):
-                        labelx = int(x + w/2 + 10)            
+                        labelx = int(x + w/2 + 10)
                     if re.search("^cat", className):
                         is_cat = True
                     if i == 0:
@@ -233,8 +250,7 @@ def queueFrames(quitEvent, videoObject, videoQueueLoop):
     vc = videoObject['comment']
     videoStreamType = "file"
     if re.search("^rtsp", v):
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
-        print("This is rtsp stream.")
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|reorder_queue_size;200|buffer_size;1048576"
         videoStreamType = "rtsp"
     else:
         print("\n\n");
@@ -248,7 +264,9 @@ def queueFrames(quitEvent, videoObject, videoQueueLoop):
                     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;hevc_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
                 else: 
                     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+    print("stream type : %s" % ( videoStreamType) )
     while not quitEvent.is_set():
+        print("Openning stream : %s" % (v) )
         cap = cv2.VideoCapture(v,cv2.CAP_FFMPEG)
         videoQueueLoop.clear()
         while not videoQueueLoop.is_set():
@@ -262,13 +280,16 @@ def queueFrames(quitEvent, videoObject, videoQueueLoop):
                 failures+=1
             if failures > 5:
                 cap.release()
+                while framesIn.qsize() > 0 and framesOut.qsize() > 0:
+                    time.sleep(1/30)
                 if videoStreamType == "file":
+                    print("shutting down - stream type : %s" % ( videoStreamType) )                        
                     quitEvent.set()
                     videoQueueLoop.set()
-                    return
                 else:
                     videoQueueLoop.set()
-                    
+                    time.sleep(1)
+    return                    
 
 def mainLoop(quitEvent, videoObject):
     frameCounter = 0 
@@ -281,8 +302,20 @@ def mainLoop(quitEvent, videoObject):
     while not quitEvent.is_set():
         is_cat = False
         frameCounter += 1
-        imgObject = framesIn.get()
+        while framesIn.empty():
+            #print ("mainLoop: queue empty")
+            time.sleep(1/60)
+            if framesIn.empty():
+                if quitEvent.is_set():
+                    return
+        try:
+            imgObject = framesIn.get(True, 1)
+        except queue.Empty:
+            continue
         img = imgObject["image"]
+        img2 = None
+        if args.writeImages:
+            img2 = imgObject["image"].copy()
         if args.scaleimg:
             #height, width = img.shape[:2]
             #ih, iw, ic = img.shape
@@ -292,6 +325,14 @@ def mainLoop(quitEvent, videoObject):
         SCALE_FACTOR = 1/args.scalefactor
         img, is_cat, data, lastIndexes  = getObjects(imgObject,net,CONF_THRESH,NMS_THRESH, SCALE_FACTOR, frameCounter=frameCounter, lastIndexes=lastIndexes)
         framesOut.put({ "image": img, "data": data, "videoStreamType": imgObject["videoStreamType"] })
+        writeImagesOveride = True
+        if args.writeImagesNotCats:
+            for d in data:
+                if d["is_cat"]:
+                    writeImagesOveride = False
+        if args.writeImages and len(data)>0 and writeImagesOveride:
+            framesToWrite.put({ "image": img2, "data": data, "videoStreamType": imgObject["videoStreamType"] })
+       
 
 def printLabels(videoStreamType="file"):
     labels = {
@@ -320,6 +361,49 @@ def printDataLine(videoStreamType="file", d={} ):
     else:
         print( "%(date)24s %(catCounter)12d %(catTimer)14d %(class)16s %(conf)8s %(x)6d %(y)6d %(w)6d %(h)6d %(pix)12d %(area)12d     %(percent)3.2f" % d )
 
+def writeImages(quitEvent, videoObject):
+    session = time.time()
+    serial = 0
+    print ("Starting Write Images Thread : Session %d" % (session) )
+    while not quitEvent.is_set():
+        print ("Writing for Image : Session %d" % (session) )
+        while framesIn.empty() and not quitEvent.is_set():
+            #print ("writeImages: queue empty")
+            time.sleep(1/30)
+            if quitEvent.is_set():
+                return
+        try:
+            imgObject = framesToWrite.get(True, 1)
+        except queue.Empty:
+            continue
+        filename = args.writePath + "/" + "%10d-%08d" % (session, serial)
+        print ("Writing : File %s" % (filename) )
+        cv2.imwrite(filename + ".jpg", imgObject["image"])
+        xml2 = {}
+        xml2['annotation'] = {}
+        xml2['annotation']['folder'] = "none"
+        xml2['annotation']['filename'] = "%10d-%08d.jpg" % (session, serial)
+        xml2['annotation']['path'] = args.writePath
+        xml2['annotation']['source'] = {}
+        xml2['annotation']['source']['database'] = "Unknown"
+        xml2['annotation']['segmented'] = 0
+        xml2['annotation']['object'] = []
+        for data in imgObject["data"]:
+            xml2['annotation']['object'].append( { 'name': data["class"],
+                                                      'bndbox': { 'xmin': data["x"],
+                                                                  'ymin': data["y"],
+                                                                  'xmax': data["x"] + data["w"],
+                                                                  'ymax': data["y"] + data["h"]
+                                                                }
+                                                            }
+                                                        )
+        pp.pprint (xml2)
+        print (simplexml.dumps(xml2))
+        serial+=1
+        f = open(filename + ".xml",'w')
+        f.write(simplexml.dumps(xml2))
+        f.close
+
 def displayImage(quitEvent, videoObject):
     catTimer = time.time() - 11
     catCounter = 0
@@ -329,12 +413,14 @@ def displayImage(quitEvent, videoObject):
     vc = videoObject['comment']
     cv2.namedWindow(vc, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_EXPANDED)
 
-
+    while framesOut.empty():
+        #print ("displayImage: queue empty")
+        time.sleep(1/60)
     imgObject = framesOut.get()
     img2 = imgObject["image"]
     height, width = img2.shape[:2]
     print( "\n\n%8s %12d %14d" %  ( " h/w ", height, width ) )
-    new_height = 1024
+    new_height = 800
     reduceBy =  height / new_height
     print( "\n\n%8s %12d %14.2f" %  ( " new_height", new_height, reduceBy ) )
     new_width = int(width/reduceBy)
@@ -345,7 +431,16 @@ def displayImage(quitEvent, videoObject):
     cv2.waitKey(1)    
 
     while not quitEvent.is_set():
-        imgObject = framesOut.get()
+        if framesOut.empty():
+            if quitEvent.is_set():
+                return
+            else:
+                time.sleep(1/60)
+                continue
+        try:
+            imgObject = framesOut.get(True, 1)
+        except queue.Empty:
+            continue
         img2 = imgObject["image"]
         data = imgObject["data"]
         is_cat_frame = False
@@ -373,7 +468,8 @@ def displayImage(quitEvent, videoObject):
                 if meowTime > 150:
                     meowTime = 10
                 catTimer = time.time()
-                pygame.mixer.music.play()
+                if not _pygame_noSound:
+                    pygame.mixer.music.play()
         cv2.imshow(vc,img2)
         cv2.waitKey(1)        
 
@@ -387,12 +483,17 @@ if __name__ == "__main__":
     videoObject["videoFile"] = args.uri
     videoObject["comment"] = args.name
     vc = videoObject["comment"]
+
+    if args.writeImages:
+        writeImagesThread = threading.Thread(target=writeImages, args=(quitEvent, videoObject, ))
+        writeImagesThread.start()
+        time.sleep(1)
     
     displayImageThread = threading.Thread(target=displayImage, args=(quitEvent, videoObject, ))
-    queueFrames = threading.Thread(target=queueFrames, args=(quitEvent, videoObject, videoQueueLoop ))
+    queueFramesThread = threading.Thread(target=queueFrames, args=(quitEvent, videoObject, videoQueueLoop ))
 
     displayImageThread.start()
-    queueFrames.start()
+    queueFramesThread.start()
 
     while not quitEvent.is_set():
         try:
@@ -400,6 +501,8 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             quitEvent.set()
             displayImageThread.join()
-            queueFrames.join()
+            queueFramesThread.join()
+            if args.writeImages:
+                writeImagesThread.join()
             sys.exit(0)
 
