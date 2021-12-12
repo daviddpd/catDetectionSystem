@@ -153,8 +153,9 @@ for xmlfile in xmlfiles:
     # MD5-5c05-f7ca-cd5d-940f1d76f6-95e8-8ee79d
     # MD5-0123 4567 8901 2345678901 2345 678901
     #                 1          2           3    
-    csfmt = ("{}-{}-{}-{}-{}-{}").format( cs[0:4],cs[4:8],cs[8:12],cs[12:22],cs[22:26],cs[26:32]  )    
-    print ( " %-80s : classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (xmlfile.replace("/z/camera/communitycats/custom_data/imagebyclass", ""), len(imageClasses), imageAminial, csfmt, imageClasses)) 
+    csfmt = ("{}-{}-{}-{}-{}-{}").format( cs[0:4],cs[4:8],cs[8:12],cs[12:22],cs[22:26],cs[26:32]  )
+    #xmlfile.split("/").
+    print ( " %-80s : (%4d x %4d) classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (xmlfile.replace("/z/camera/communitycats/custom_data/", ""), height, width, len(imageClasses), imageAminial, csfmt, imageClasses)) 
     bn = "/z/camera/communitycats/custom_data/imagebyclass/" + imageAminial + "/" + csfmt
     bn_deleted = "/z/camera/communitycats/custom_data/disabled/deleted/" + csfmt
     if AminialInt > -1 and not args.dryrun:

@@ -141,7 +141,7 @@ for xmlfile in xmlfiles:
         except:
             pass
         try:
-            if i == 0:
+            if len(objects) == 1:
                 xml['annotation']['object']["name"] = args.changeto
             else:
                 xml['annotation']['object'][i]["name"] = args.changeto

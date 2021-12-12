@@ -12,38 +12,76 @@ import threading
 import signal
 import sys
 import ffmpeg
+import random
+
+
+
+
+def excludeClass(s):
+    try:
+        o = {}
+        o['class'], o['low'], o['high'] = s.split(',')
+        o['low'] = float(o['low'])
+        o['high'] = float(o['high'])
+        return o
+    except:
+        raise argparse.ArgumentTypeError("Must be ClassName,float,float; where floats are are between 0 and 1; percentage.")
+
 
 pp = pprint.PrettyPrinter(indent=4)
 _pid  = os.getpid()
 _name = sys.argv[0]
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--uri', help='path to video file or rtsp ', required=True)
+
+parser.add_argument('--ratein', help='fetch rate limite, frame rate denominator ( 1/VALUE )', default=0, type=int)
+
 parser.add_argument('--writePath', help='path to save images', default="/z/camera/communitycats/custom_data/images-auto-extract")
 parser.add_argument('--writeImages', help='Write Images with Objects detected',  default=False, action='store_true')
+parser.add_argument('--writeXmlOnly', help='Write XML with Objects detected, in the same directory as the source',  default=False, action='store_true')
+
 parser.add_argument('--writeImagesNotCats', help='Only write non-cat frames',  default=False, action='store_true')
+parser.add_argument('--excludeClass', help="excludeClass,%,%", type=excludeClass, nargs=1, action='extend')
 
 parser.add_argument('--name', help='Window Name', default=_name + ":" + str(_pid) )
 parser.add_argument('--conf', help='confidence threshold', default=0.9, type=float)
+parser.add_argument('--confcutoff', help='confidence upper cutoff', default=1.1, type=float)
 parser.add_argument('--nms', help='NMS threshold', default=0.5 , type=float)
 parser.add_argument('--scalefactor', help='SCALE_FACTOR denominator ( 1/VALUE )', default=300, type=int)
 parser.add_argument('--scaleimg', help='Scale Image',  default=False, action='store_true')
 parser.add_argument('--areaReject', help='Reject Match if % pixel area is greater than this precent ', default=101.00 , type=float)
+parser.add_argument('--backframes', help='Track last X number of frames', default=10, type=int)
+parser.add_argument('--model', help='Model Name Bundle', default="yolo.416v6.64" )
+
+parser.add_argument('--quiet', help='Turn text objects printing',  default=False, action='store_true')
+
+parser.add_argument('--nomeow', help='Turn off meow',  default=False, action='store_true')
+parser.add_argument('--shuffle', help='Shuffle File List',  default=False, action='store_true')
+parser.add_argument('--nodotfiles', help='ignore dot files in directories',  default=True, action='store_false')
+parser.add_argument('--wait', help='wait for keypress (set waitkey=0)',  default=False, action='store_true')
+
+parser.add_argument('--arm', help='Run on ARM65',  default=False, action='store_true')
+
 
 
 args, _ = parser.parse_known_args()
 
-framesIn  = queue.Queue(100)
-framesOut = queue.Queue(100)
-framesToWrite = queue.Queue(1000)
+framesIn  = queue.Queue(30)
+framesOut = queue.Queue(30)
+framesToWrite = queue.Queue(300)
 classNames = []
 soundMeow = "/z/camera/Meow-cat-sound-effect.mp3"
 _pygame_noSound = False
-try:
-    pygame.mixer.init()
-    pygame.mixer.music.load(soundMeow)
-except:
+if not args.nomeow:
+    try:
+        pygame.mixer.init()
+        pygame.mixer.music.load(soundMeow)
+    except:
+        _pygame_noSound = True
+        pass
+else:
     _pygame_noSound = True
-    pass
+    
     
 
 cw = {}
@@ -60,11 +98,23 @@ cw["yolo.416v4.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-n
 cw["yolo.416v5.64"] = {}
 cw["yolo.416v5.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v5-64.cfg"
 cw["yolo.416v5.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v5-64_final.weights"
-cw["yolo.416v5.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v5-64_last.weights"
+#cw["yolo.416v5.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v5-64_last.weights"
 cw["yolo.416v5.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-v4.txt"
 
 
-pkgVer = "yolo.416v5.64"
+cw["yolo.416v6.64"] = {}
+cw["yolo.416v6.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v6-64.cfg"
+cw["yolo.416v6.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v6-64_final.weights"
+#cw["yolo.416v6.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v6-64_last.weights"
+cw["yolo.416v6.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-v4.txt"
+
+
+cw["yolo.9k"] = {}
+cw["yolo.9k"]["configPath"] = "/home/dpd/darknet/cfg/yolo9000.cfg"
+cw["yolo.9k"]["weightsPath"] = "/home/dpd/yolo-9000/yolo9000-weights/yolo9000.weights"
+cw["yolo.9k"]["coconames"] = "/home/dpd/darknet/data/9k.names"
+
+pkgVer = args.model
 
 classNamesToIds = {}
 
@@ -89,7 +139,10 @@ colors = (colorsPencils['turquoise'],
           colorsPencils['maraschino'],
           colorsPencils['stawberry'],
           colorsPencils['lemon'],
-          colorsPencils['blueberry']
+          colorsPencils['blueberry'],
+          colorsPencils['lead'],
+          colorsPencils['lead'],
+          colorsPencils['lead']
          )
 
 def ResizeWithAspectRatio(image, width=None, height=None, inter=cv2.INTER_AREA):
@@ -108,7 +161,7 @@ def ResizeWithAspectRatio(image, width=None, height=None, inter=cv2.INTER_AREA):
     return cv2.resize(image, dim, interpolation=inter)
 
 
-def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=(416,416), frameCounter=0, lastIndexes=[]):
+def getObjects(imgObject, net, confThres, confThresCutOff, nmsThersh, scaleFactor=1/300, netSize=(416,416), frameCounter=0, lastIndexes=[]):
     img = imgObject["image"]
     layers = net.getLayerNames()
     output_layers = [layers[i[0] - 1] for i in net.getUnconnectedOutLayers()]
@@ -119,14 +172,13 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
     blob = cv2.dnn.blobFromImage(img, scaleFactor, netSize, swapRB=True, crop=False)
     net.setInput(blob)
     layer_outputs = net.forward(output_layers)
-    #print (layer_outputs)
-    class_ids, confidences, b_boxes = [], [], []
+    indices, class_ids, confidences, b_boxes = [], [], [], []
     for output in layer_outputs:
         for detection in output:
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > confThres:
+            if confidence > confThres and confidence < confThresCutOff:
                 center_x, center_y, w, h = (detection[0:4] * np.array([width, height, width, height])).astype('int')
                 x = int(center_x - w / 2)
                 y = int(center_y - h / 2)
@@ -135,8 +187,10 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
                 class_ids.append(int(class_id))
     try:
         indices = cv2.dnn.NMSBoxes(b_boxes, confidences, confThres, nmsThersh).flatten().tolist()
-        test1 = indices[0]
-        
+    except AttributeError:
+        indices = []        
+    try:
+        test1 = indices[0]        
         mergeIndexes.append( { "indices": indices,
                                "b_boxes": b_boxes , 
                                "confidences": confidences, 
@@ -144,26 +198,23 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
                                "frameCounter": frameCounter
                               } 
                             )
-        #pp.pprint(mergeIndexes)
-    except AttributeError:
-        #print ("AttributeError: no objects detected\n");   
+    except IndexError:
         mergeIndexes.append ( 
-                               {   'b_boxes': [[-1,-1,-1,-1]],
-                                  'class_ids': [-1],
+                               {   'b_boxes': [[0,0,0,0]],
+                                  'class_ids': [0],
                                   'confidences': [0],
                                   'frameCounter': frameCounter,
                                   'indices': [-1]
                                }
                             )
-#        else:
-#            return img, False, data, lastIndexes
     i=0
-    mIdx = 11
+    mIdx = args.backframes
     ih, iw, ic = img.shape
     is_cat = False
     mergeIndexes += lastIndexes
     lastIndexes = []
     for indexObject in mergeIndexes:
+        class_ids, confidences, b_boxes = [], [], []
         class_ids    = indexObject["class_ids"]
         confidences  = indexObject["confidences"]
         b_boxes      = indexObject["b_boxes"]
@@ -175,23 +226,31 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
             y=0
             w=200
             h=200
+            area = 0
             className = "NotSet"
             conf = "0.00"
             is_empty = False
             _draw_color = colorsPencils['lead']
             percent = 0.0
-            try:
-                if index == -1:
+            if index == -1:
+                try:
                     x, y, w, h = b_boxes[0]
                     className = " - "
                     classId = -1
                     is_empty = True
                     _draw_color = colorsPencils['lead']
-                else:
+                    conf = "0.00"
+                except IndexError as e:
+                    print("IndexError, getObjects( index == -1 ):", e);
+            else:
+                try:
                     x, y, w, h = b_boxes[index]
                     className = classes[class_ids[index]]
                     classId = class_ids[index]
-                    _draw_color = colors[classId]
+                    colorId = classId
+                    if classId > len(colors):
+                        colorId = classId % len(colors)
+                    _draw_color = colors[colorId]
                     area = w*h
                     percent = round(area/pix*100, 2)
                     if percent > args.areaReject:
@@ -200,40 +259,43 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
                         classId = -1
                         is_empty = True
                         _draw_color = colorsPencils['lead']
-            except IndexError:
-                print("IndexError");
+                except IndexError as e:
+                    print("IndexError, getObjects (else):", e,index,classId,colorId);
             try:
                 conf = str(round(confidences[index]*100,2))
-            except IndexError: 
-                print("IndexError: list index out of range index:{} ".format(index))
+            except IndexError as e: 
+                print("IndexError:getObjects list index out of range index:{} ".format(index), e)
                 print("class_ids: ", class_ids )
                 print("confidences", confidences)
-            try:
-                
+            try:                
                 if not is_empty: 
                     _draw_color = _draw_color
-                    cv2.rectangle(img, (x, y), (x + w, y + h), _draw_color, 2)
+                    try:
+                        cv2.rectangle(img, (x, y), (x + w, y + h), _draw_color, 2)
+                    except Exception as e:
+                        print (x,y,w,h,_draw_color)
+                        raise e
                     labelx = x + 10
                     if re.search("^cat-", className):
                         labelx = int(x + w/2 + 10)
                     if re.search("^cat", className):
                         is_cat = True
+                    data.append( {
+                                'frame': frameCounter,
+                                'class': className,
+                                'conf': conf, 
+                                'x':x, 
+                                'y':y, 
+                                'w':w, 
+                                'h':h,
+                                'area': area,
+                                'pix': pix,
+                                'percent': percent,
+                                "is_cat": is_cat,
+                                "date": imgObject["time"]
+                                }
+                            )
                     if i == 0:
-                        data.append( {
-                                    'frame': frameCounter,
-                                    'class': className,
-                                    'conf': conf, 
-                                    'x':x, 
-                                    'y':y, 
-                                    'w':w, 
-                                    'h':h,
-                                    'area': area,
-                                    'pix': pix,
-                                    'percent': percent,
-                                    "is_cat": is_cat,
-                                    "date": imgObject["time"]
-                                    }
-                                )
                         cv2.putText(img, className, (labelx, y - 20), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1.2, _draw_color, 2)
                         cv2.putText(img, conf, (labelx, y - 50), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1.2, _draw_color, 2)            
                 cv2.putText(img, className, ( 125, 75+(35*i)), cv2.FONT_HERSHEY_COMPLEX_SMALL, 1.3, _draw_color, 2)
@@ -245,59 +307,108 @@ def getObjects(imgObject, net, confThres, nmsThersh, scaleFactor=1/300, netSize=
     return img, is_cat, data, lastIndexes
 
 def queueFrames(quitEvent, videoObject, videoQueueLoop):
-    failures = 0
     v = videoObject['videoFile']
     vc = videoObject['comment']
+    vidImgFiles = []
     videoStreamType = "file"
-    if re.search("^rtsp", v):
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|reorder_queue_size;200|buffer_size;1048576"
-        videoStreamType = "rtsp"
+    if os.path.isdir(v):
+        for root, dirs, files in os.walk(v, topdown=False):
+            if dirs == ".DS_Store":
+                continue
+            for name in files:
+                if re.search("^\.", name) and args.nodotfiles:
+                    continue
+                elif re.search("\.(jpg|jpeg|mkv|mp4)$", name):
+                  vidImgFiles.append(os.path.join(root, name))
     else:
-        print("\n\n");
-        vid = ffmpeg.probe(v)
-        for stream in vid['streams']:
-            print ("Opening video %s code:[%s][%s] " % ( v,stream['codec_type'], stream['codec_name']))
-            if  stream['codec_type'] == "video": 
-                if stream['codec_name'] == "h264":
-                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;h264_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
-                elif stream['codec_name'] == "hevc" or stream['codec_name'] == "h265":
-                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;hevc_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
-                else: 
-                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
-    print("stream type : %s" % ( videoStreamType) )
+      vidImgFiles.append(v)            
+    if args.shuffle:
+        random.shuffle(vidImgFiles)
+    else:
+        vidImgFiles.sort(reverse=True)
+    pp.pprint ( vidImgFiles )
+#    print ("Number of Files: %d" % len(vidImgFiles))
+    if len(vidImgFiles) == 0 and videoStreamType != "rtsp":
+        quitEvent.set()
     while not quitEvent.is_set():
-        print("Openning stream : %s" % (v) )
-        cap = cv2.VideoCapture(v,cv2.CAP_FFMPEG)
-        videoQueueLoop.clear()
-        while not videoQueueLoop.is_set():
-            success, img = cap.read()
-            t = time.localtime()
-            strTime = time.strftime("%Y-%m-%d %H:%M:%S %Z", t)
-            if success:
-                framesIn.put({ "image": img, "time": strTime, "videoStreamType": videoStreamType })
-            else:
-                print("queueFrames: failure")
-                failures+=1
-            if failures > 5:
-                cap.release()
-                while framesIn.qsize() > 0 and framesOut.qsize() > 0:
-                    time.sleep(1/30)
-                if videoStreamType == "file":
-                    print("shutting down - stream type : %s" % ( videoStreamType) )                        
+            if videoStreamType != "rtsp":
+                try:
+                    v = vidImgFiles.pop()
+#                    print ("Number of Files: %d" % len(vidImgFiles))
+                except IndexError:
+                    while framesIn.qsize() > 0 and framesOut.qsize() > 0:
+                        time.sleep(1/30)
+                    videoQueueLoop.set()
                     quitEvent.set()
+                    return
+            framesIn.put({ "noimage": True, "path": v })                    
+            if re.search("^rtsp", v):
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|reorder_queue_size;200|buffer_size;1048576"
+                videoStreamType = "rtsp"
+                #print("stream type (1) : %s" % ( videoStreamType) )
+            else:
+                vid = ffmpeg.probe(v)
+                for stream in vid['streams']:
+                    #print ("Opening video %s code:[%s][%s] " % ( v,stream['codec_type'], stream['codec_name']))
+                    if  stream['codec_type'] == "video" and not args.arm: 
+                        videoStreamType = "video"
+                        if stream['codec_name'] == "h264":
+                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;h264_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
+                        elif stream['codec_name'] == "hevc" or stream['codec_name'] == "h265":
+                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;hevc_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
+                        elif stream['codec_name'] == "png" or stream['codec_name'] == "mjpeg" or stream['codec_name'] == "jpeg":
+                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+                            videoStreamType = "image"
+                        else: 
+                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+                            videoStreamType = "file"
+                    else:
+                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+                        videoStreamType = "video"
+                        
+            #print("stream type : %s" % ( videoStreamType) )
+            #print("Openning stream : %s" % (v) )
+            if videoStreamType == "video" or videoStreamType == "rtsp":
+                cap = cv2.VideoCapture(v,cv2.CAP_FFMPEG)
+            videoQueueLoop.clear()
+            failures = 0
+            while not videoQueueLoop.is_set():
+                if videoStreamType == "video" or videoStreamType == "rtsp":
+                    success, img = cap.read()
+                elif videoStreamType == "image":
+                    img = cv2.imread(v)
+                    success = True
                     videoQueueLoop.set()
+                t = time.localtime()
+                strTime = time.strftime("%Y-%m-%d %H:%M:%S %Z", t)
+                if success:
+                    framesIn.put({ "image": img, "time": strTime, "videoStreamType": videoStreamType, "path": v, "noimage": False })
                 else:
-                    videoQueueLoop.set()
-                    time.sleep(1)
-    return                    
+                    #print("queueFrames: failure")
+                    failures+=1
+                if failures > 5:
+                    if videoStreamType == "video" or videoStreamType == "rtsp":
+                        cap.release()
+                        while framesIn.qsize() > 0 and framesOut.qsize() > 0:
+                            time.sleep(1/30)
+                        #print("shutting down - stream type : %s" % ( videoStreamType) )
+                        videoQueueLoop.set()
+                        if len(vidImgFiles) == 0:
+                            quitEvent.set()
+                    else:
+                        #print("shutting down - stream type : %s" % ( videoStreamType) )
+                        if len(vidImgFiles) == 0:
+                            quitEvent.set()
+    return
 
 def mainLoop(quitEvent, videoObject):
     frameCounter = 0 
     data = {}
-    vc = videoObject['comment']    
-    net = cv2.dnn.readNetFromDarknet(cw[pkgVer]["configPath"],cw[pkgVer]["weightsPath"]);
-    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+    vc = videoObject['comment']
+    net = None
+#    net = cv2.dnn.readNetFromDarknet(cw[pkgVer]["configPath"],cw[pkgVer]["weightsPath"]);
+#    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+#    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
     lastIndexes = []
     while not quitEvent.is_set():
         is_cat = False
@@ -309,32 +420,47 @@ def mainLoop(quitEvent, videoObject):
                 if quitEvent.is_set():
                     return
         try:
+            if args.ratein > 0:
+                time.sleep(1/args.ratein)
             imgObject = framesIn.get(True, 1)
+            if imgObject["noimage"]:
+                #print (" ============ New File / Reseting DNN ===================\n")
+                net = cv2.dnn.readNetFromDarknet(cw[pkgVer]["configPath"],cw[pkgVer]["weightsPath"]);
+                net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+                net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)    
+                #net.setPreferableTarget(cv2.dnn.DNN_TARGET_OPENCL)
+                #time.sleep(2)
+                continue
         except queue.Empty:
             continue
-        img = imgObject["image"]
+        #img = imgObject["image"]
         img2 = None
         if args.writeImages:
             img2 = imgObject["image"].copy()
         if args.scaleimg:
+            img = imgObject["image"]
             #height, width = img.shape[:2]
             #ih, iw, ic = img.shape
             img = ResizeWithAspectRatio(img, 1280)
         CONF_THRESH = args.conf
+        CONF_THRESH_CUTOFF = args.confcutoff
         NMS_THRESH  = args.nms
         SCALE_FACTOR = 1/args.scalefactor
-        img, is_cat, data, lastIndexes  = getObjects(imgObject,net,CONF_THRESH,NMS_THRESH, SCALE_FACTOR, frameCounter=frameCounter, lastIndexes=lastIndexes)
-        framesOut.put({ "image": img, "data": data, "videoStreamType": imgObject["videoStreamType"] })
+        img, is_cat, data, lastIndexes  = getObjects(imgObject,net,CONF_THRESH, CONF_THRESH_CUTOFF,NMS_THRESH, SCALE_FACTOR, frameCounter=frameCounter, lastIndexes=lastIndexes)
+        #pp.pprint(data)
+        framesOut.put({ "image": img, "data": data, "videoStreamType": imgObject["videoStreamType"], "path": imgObject["path"] })
         writeImagesOveride = True
         if args.writeImagesNotCats:
             for d in data:
                 if d["is_cat"]:
                     writeImagesOveride = False
         if args.writeImages and len(data)>0 and writeImagesOveride:
-            framesToWrite.put({ "image": img2, "data": data, "videoStreamType": imgObject["videoStreamType"] })
+            framesToWrite.put({ "image": img2, "data": data, "videoStreamType": imgObject["videoStreamType"],  "path": imgObject["path"] })
        
 
 def printLabels(videoStreamType="file"):
+    if args.quiet:
+        return
     labels = {
                 'frame': "frame",
                 'class': "class",
@@ -350,25 +476,42 @@ def printLabels(videoStreamType="file"):
                 'area': "area",
                 'pix': "pix"
                 }
-    if videoStreamType == "file":
-        print( "\n\n%(frame)8s %(catCounter)12s %(catTimer)14s %(class)16s %(conf)8s %(x)6s %(y)6s %(w)6s %(h)6s %(pix)12s %(area)12s %(percent)5s \n" %  labels )
+    if videoStreamType == "video" or videoStreamType == "file" or videoStreamType == "image": 
+        print( "\n\n%(frame)8s %(catCounter)10s %(catTimer)10s %(class)16s %(conf)8s %(x)6s %(y)6s %(w)6s %(h)6s %(pix)12s %(area)12s %(percent)5s \n" %  labels )
     else:
-        print( "\n\n%(date)24s %(catCounter)12s %(catTimer)14s %(class)16s %(conf)8s %(x)6s %(y)6s %(w)6s %(h)6s %(pix)12s %(area)12s %(percent)5s \n" %  labels )
+        print( "\n\n%(date)24s %(catCounter)10s %(catTimer)10s %(class)16s %(conf)8s %(x)6s %(y)6s %(w)6s %(h)6s %(pix)12s %(area)12s %(percent)5s \n" %  labels )
 
 def printDataLine(videoStreamType="file", d={} ):
-    if videoStreamType == "file":
-        print( "%(frame)8d %(catCounter)12d %(catTimer)14d %(class)16s %(conf)8s %(x)6d %(y)6d %(w)6d %(h)6d %(pix)12d %(area)12d     %(percent)3.2f" % d )
+    if args.quiet:
+        return
+    if videoStreamType == "video" or videoStreamType == "file" or videoStreamType == "image": 
+        try:
+            print( "%(frame)8d %(catCounter)12d %(catTimer)5d/%(meowTime)4d %(class)16s %(conf)8s %(x)6d %(y)6d %(w)6d %(h)6d %(pix)12d %(area)12d     %(percent)3.2f" % d )
+        except (TypeError, IndexError) as e:
+            print ("!! ========== TypeError/IndexError : ", e )
     else:
-        print( "%(date)24s %(catCounter)12d %(catTimer)14d %(class)16s %(conf)8s %(x)6d %(y)6d %(w)6d %(h)6d %(pix)12d %(area)12d     %(percent)3.2f" % d )
+        try:
+            print( "%(date)24s %(catCounter)12d %(catTimer)5d/%(meowTime)4d %(class)16s %(conf)8s %(x)6d %(y)6d %(w)6d %(h)6d %(pix)12d %(area)12d     %(percent)3.2f" % d )
+        except (TypeError, IndexError) as e:
+            print ("!! ========== TypeError/IndexError : ", e )
 
 def writeImages(quitEvent, videoObject):
-    session = time.time()
+    subDir = None
+    writePathBase = None
     serial = 0
-    print ("Starting Write Images Thread : Session %d" % (session) )
+    _excludeClasses = {}
+    try:
+        for o in args.excludeClass:
+            c = o["class"]
+            _excludeClasses[c] = {}
+            _excludeClasses[c]['h'] = o["high"]
+            _excludeClasses[c]['l'] = o["low"]
+    except TypeError:
+        pass
+    pp.pprint(_excludeClasses)
     while not quitEvent.is_set():
-        print ("Writing for Image : Session %d" % (session) )
+        excludedThisFrame = False
         while framesIn.empty() and not quitEvent.is_set():
-            #print ("writeImages: queue empty")
             time.sleep(1/30)
             if quitEvent.is_set():
                 return
@@ -376,19 +519,47 @@ def writeImages(quitEvent, videoObject):
             imgObject = framesToWrite.get(True, 1)
         except queue.Empty:
             continue
-        filename = args.writePath + "/" + "%10d-%08d" % (session, serial)
-        print ("Writing : File %s" % (filename) )
-        cv2.imwrite(filename + ".jpg", imgObject["image"])
+            
+        
+        if not args.writeXmlOnly:
+            frameNumber = imgObject['data'][0]['frame']
+            baseFileNmae = re.sub(r'\.(jpg|jpeg|mkv|mp4)$', "", os.path.basename(imgObject["path"]) )
+            frameDir = 128 * int(frameNumber / 128)
+            subDir = baseFileNmae + "/" +"%08d" % ( frameDir )
+            writePathBase = os.path.dirname(args.writePath)
+            destDirPath = writePathBase + "/" + subDir
+            filename = destDirPath + "/" + "%s-%08d" % (baseFileNmae, frameNumber)
+        else:
+            baseFileNmae = re.sub(r'\.(jpg|jpeg|mkv|mp4)$', "", os.path.basename(imgObject["path"]) )
+            writePathBase = os.path.dirname(args.writePath)
+            destDirPath = writePathBase
+            filename = destDirPath + "/" + "%s" % (baseFileNmae)
+        if not os.path.isdir(destDirPath):
+            try:
+                os.makedirs(destDirPath)
+            except FileExistsError:
+                pass
         xml2 = {}
         xml2['annotation'] = {}
         xml2['annotation']['folder'] = "none"
-        xml2['annotation']['filename'] = "%10d-%08d.jpg" % (session, serial)
-        xml2['annotation']['path'] = args.writePath
+        xml2['annotation']['filename'] =  filename + ".jpg"
+        xml2['annotation']['path'] = destDirPath
         xml2['annotation']['source'] = {}
         xml2['annotation']['source']['database'] = "Unknown"
         xml2['annotation']['segmented'] = 0
         xml2['annotation']['object'] = []
         for data in imgObject["data"]:
+            c = data["class"]
+            conf = float(data["conf"])
+            h = -1
+            l = -1
+            try:
+                h = _excludeClasses[c]['h']
+                l = _excludeClasses[c]['l']
+                if conf < h and conf > l:
+                    excludedThisFrame = True
+            except Exception as e:
+                pass
             xml2['annotation']['object'].append( { 'name': data["class"],
                                                       'bndbox': { 'xmin': data["x"],
                                                                   'ymin': data["y"],
@@ -397,52 +568,63 @@ def writeImages(quitEvent, videoObject):
                                                                 }
                                                             }
                                                         )
-        pp.pprint (xml2)
-        print (simplexml.dumps(xml2))
+            print ( "{} {} {} {} W:{}".format(c,data["conf"],l, h,not excludedThisFrame) )
         serial+=1
-        f = open(filename + ".xml",'w')
-        f.write(simplexml.dumps(xml2))
-        f.close
+        if not excludedThisFrame:
+            f = open(filename + ".xml",'w')
+            f.write(simplexml.dumps(xml2))
+            f.close
+            if not args.writeXmlOnly:
+                cv2.imwrite(filename + ".jpg", imgObject["image"])
+        
 
 def displayImage(quitEvent, videoObject):
+    waitKeyDealy = 1
+    if args.wait:
+       waitKeyDealy = 0 
     catTimer = time.time() - 11
     catCounter = 0
     lineCounter = 0
-    meowTime = 10
-    modulo = 10
+    meowTime_inital = 15
+    meowTime_MAX = 960
+    meowTime = meowTime_inital
+    modulo = 30
     vc = videoObject['comment']
     cv2.namedWindow(vc, cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_EXPANDED)
+    _windowOpen = False
 
-    while framesOut.empty():
-        #print ("displayImage: queue empty")
-        time.sleep(1/60)
-    imgObject = framesOut.get()
-    img2 = imgObject["image"]
-    height, width = img2.shape[:2]
-    print( "\n\n%8s %12d %14d" %  ( " h/w ", height, width ) )
-    new_height = 800
-    reduceBy =  height / new_height
-    print( "\n\n%8s %12d %14.2f" %  ( " new_height", new_height, reduceBy ) )
-    new_width = int(width/reduceBy)
-    print( "\n\n%8s %12d %14.2f" %  ( " new_width", new_width, reduceBy ) )
-    cv2.resizeWindow(vc, new_width, new_height )
-    cv2.moveWindow(vc, 100,50)
-    cv2.imshow(vc,img2)
-    cv2.waitKey(1)    
-
+#     while framesOut.empty():
+#         #print ("displayImage: queue empty")
+#         time.sleep(1/60)
+#     imgObject = framesOut.get()
+#     img2 = imgObject["image"]
     while not quitEvent.is_set():
-        if framesOut.empty():
-            if quitEvent.is_set():
-                return
-            else:
-                time.sleep(1/60)
-                continue
+        #if framesOut.empty():
+        #    if quitEvent.is_set():
+        #        return
+        #    else:
+        #       time.sleep(1/60)
+        #        continue
         try:
-            imgObject = framesOut.get(True, 1)
+            imgObject = framesOut.get()
         except queue.Empty:
             continue
         img2 = imgObject["image"]
         data = imgObject["data"]
+
+        if _windowOpen == False:
+            height, width = img2.shape[:2]
+            print( "\n\n%8s %12d %14d" %  ( " h/w ", height, width ) )
+            new_height = 1280
+            reduceBy =  height / new_height
+            print( "\n\n%8s %12d %14.2f" %  ( " new_height", new_height, reduceBy ) )
+            new_width = int(width/reduceBy)
+            print( "\n\n%8s %12d %14.2f" %  ( " new_width", new_width, reduceBy ) )
+            cv2.resizeWindow(vc, new_width, new_height )
+            cv2.moveWindow(vc, 75,50)
+            _windowOpen = True
+            #cv2.imshow(vc,img2)
+            #cv2.waitKey(1)    
         is_cat_frame = False
         for d in data:
             if d['is_cat']:
@@ -450,28 +632,30 @@ def displayImage(quitEvent, videoObject):
             d['catTimer'] = time.time() - catTimer
             c = d["class"]
             d['catCounter'] = catCounter
-            if lineCounter % 25 == 0:
-                printLabels(imgObject["videoStreamType"])
-            printDataLine(imgObject["videoStreamType"],d)
+            d['meowTime'] = meowTime
+            if not args.writeImages:
+                if lineCounter % 25 == 0:
+                    printLabels(imgObject["videoStreamType"])
+                printDataLine(imgObject["videoStreamType"],d)
             lineCounter+=1
         if is_cat_frame:
             catCounter+=1
         else:
             catCounter=0
-        if meowTime > 150:
-            meowTime = 10
+        if time.time() - catTimer > meowTime_MAX:
+            meowTime = meowTime_inital
         if catCounter > 0 and catCounter % modulo == 0:
              end = time.time()
              seconds = end - catTimer
              if seconds > meowTime:
                 meowTime = meowTime*2
-                if meowTime > 150:
-                    meowTime = 10
+                if meowTime > meowTime_MAX:
+                    meowTime = meowTime_inital
                 catTimer = time.time()
                 if not _pygame_noSound:
                     pygame.mixer.music.play()
         cv2.imshow(vc,img2)
-        cv2.waitKey(1)        
+        cv2.waitKey(waitKeyDealy)
 
 if __name__ == "__main__":
     videoQueueLoop = threading.Event()
@@ -488,21 +672,50 @@ if __name__ == "__main__":
         writeImagesThread = threading.Thread(target=writeImages, args=(quitEvent, videoObject, ))
         writeImagesThread.start()
         time.sleep(1)
+        writeImagesThread2 = threading.Thread(target=writeImages, args=(quitEvent, videoObject, ))
+        writeImagesThread2.start()
+        time.sleep(1)
+        writeImagesThread3 = threading.Thread(target=writeImages, args=(quitEvent, videoObject, ))
+        writeImagesThread3.start()
+        time.sleep(1)
+
+
     
     displayImageThread = threading.Thread(target=displayImage, args=(quitEvent, videoObject, ))
+    mainLoopThread = threading.Thread(target=mainLoop, args=(quitEvent, videoObject, ))
     queueFramesThread = threading.Thread(target=queueFrames, args=(quitEvent, videoObject, videoQueueLoop ))
 
     displayImageThread.start()
+    time.sleep(1)
     queueFramesThread.start()
-
+    mainLoopThread.start()
+    #time.sleep(1)
     while not quitEvent.is_set():
         try:
-            mainLoop(quitEvent, videoObject)
+            while not quitEvent.is_set():
+                if not mainLoopThread.is_alive() and not quitEvent.is_set():
+                    mainLoopThread = threading.Thread(target=mainLoop, args=(quitEvent, videoObject, ))
+                    mainLoopThread.start()
+                if not displayImageThread.is_alive() and not quitEvent.is_set():
+                    displayImageThread = threading.Thread(target=displayImage, args=(quitEvent, videoObject, ))
+                    displayImageThread.start()
+                if not queueFramesThread.is_alive() and not quitEvent.is_set():
+                    queueFramesThread = threading.Thread(target=queueFrames, args=(quitEvent, videoObject, videoQueueLoop ))
+                    queueFramesThread.start()
+                mainLoopThread.join(1)
+                displayImageThread.join(1)
+                queueFramesThread.join(1)
+                if args.writeImages:
+                    writeImagesThread.join(1)
+                    writeImagesThread2.join(1)
+                    writeImagesThread3.join(1)
         except KeyboardInterrupt:
             quitEvent.set()
-            displayImageThread.join()
-            queueFramesThread.join()
+            queueFramesThread.join(5)
+            displayImageThread.join(5)
             if args.writeImages:
-                writeImagesThread.join()
+                writeImagesThread.join(5)
+                writeImagesThread2.join(5)
+                writeImagesThread3.join(5)
             sys.exit(0)
 
