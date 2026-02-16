@@ -30,8 +30,9 @@ parser.add_argument('--dir', help='directory to scane for XML files')
 parser.add_argument('--classes', help='text file of strings of the class names')
 parser.add_argument('--getClasses', help='get classes from XML files', default=False, action='store_true')
 parser.add_argument('--move', help='Move instead of copy', default=False, action='store_true')
-
 parser.add_argument('--dryrun', help='do not write or modifiy any files', default=False, action='store_true')
+parser.add_argument('--writetext', help='Write the TXT files even in dryrun ', default=False, action='store_true')
+
 
 #parser.add_argument('--versionstr', help='Version/name of the training set')
 
@@ -134,12 +135,13 @@ for xmlfile in xmlfiles:
             c = classhash["cat"]    
             data  += "{} {} {} {} {}\n".format( c,  x/width, y/height,  w/width,  h/height)
             classcounts["cat"] += 1
-    if len(data) > 0 and not args.dryrun:
-        #print (" === " + data)
-        f = open(txtfile,'w')
-        f.write(data)
-        f.close
-        trainFiles.append(jpgfile)
+    if len(data) > 0:
+        print (" === " + data)
+        if not args.dryrun or (args.dryrun and args.writetext): 
+            f = open(txtfile,'w')
+            f.write(data)
+            f.close
+            trainFiles.append(jpgfile)
     imageAminial = ""
     AminialInt = -1
     for ic in imageClasses:
@@ -204,9 +206,9 @@ pp.pprint (classcounts)
 pp.pprint (classhash)
 
 
-f = open("/z/camera/communitycats/custom_data/imagebyclass/train.txt",'w')
-for data in trainFiles:
-    f.write(data + "\n")
-f.close
+# f = open("/Users/dpd/Documents/projects/" + "communitycats/custom_data/imagebyclass/train.txt",'w')
+# for data in trainFiles:
+#     f.write(data + "\n")
+# f.close
 
 

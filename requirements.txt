@@ -1,0 +1,5 @@
+opencv-contrib-python
+ffmpeg
+numpy
+pygame
+python-simplexml

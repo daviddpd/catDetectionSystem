@@ -36,7 +36,10 @@ parser.add_argument('--uri', help='path to video file or rtsp ', required=True)
 
 parser.add_argument('--ratein', help='fetch rate limite, frame rate denominator ( 1/VALUE )', default=0, type=int)
 
-parser.add_argument('--writePath', help='path to save images', default="/z/camera/communitycats/custom_data/images-auto-extract")
+parser.add_argument('--repoPath', help='gitRepo', default="/Volumes/camera/catDectionSystem")
+parser.add_argument('--communityCatsPath', help='community cats data directory', default="/Volumes/camera/communitycats")
+
+parser.add_argument('--writePath', help='path to save images', default="")
 parser.add_argument('--writeImages', help='Write Images with Objects detected',  default=False, action='store_true')
 parser.add_argument('--writeXmlOnly', help='Write XML with Objects detected, in the same directory as the source',  default=False, action='store_true')
 
@@ -70,7 +73,7 @@ framesIn  = queue.Queue(30)
 framesOut = queue.Queue(30)
 framesToWrite = queue.Queue(300)
 classNames = []
-soundMeow = "/z/camera/Meow-cat-sound-effect.mp3"
+soundMeow = "assests/Meow-cat-sound-effect.mp3"
 _pygame_noSound = False
 if not args.nomeow:
     try:
@@ -86,27 +89,27 @@ else:
 
 cw = {}
 cw["yolo.416v3.64"] = {}
-cw["yolo.416v3.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v3-64.cfg"
-cw["yolo.416v3.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v3-64_final.weights"
-cw["yolo.416v3.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-7v3.txt"
+cw["yolo.416v3.64"]["configPath"] = args.repoPath + "/yolo/cfg/yolov-tiny-custom-416v3-64.cfg"
+cw["yolo.416v3.64"]["weightsPath"] = args.communityCatsPath + "/custom_data/backup/yolov-tiny-custom-416v3-64_final.weights"
+cw["yolo.416v3.64"]["coconames"] = args.repoPath + "/yolo/cfg/custom-names-7v3.txt"
 
 cw["yolo.416v4.64"] = {}
-cw["yolo.416v4.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v4-64.cfg"
-cw["yolo.416v4.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v4-64_final.weights"
-cw["yolo.416v4.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-v4.txt"
+cw["yolo.416v4.64"]["configPath"] = args.repoPath + "/yolo/cfg/yolov-tiny-custom-416v4-64.cfg"
+cw["yolo.416v4.64"]["weightsPath"] = args.communityCatsPath + "/custom_data/backup/yolov-tiny-custom-416v4-64_final.weights"
+cw["yolo.416v4.64"]["coconames"] = args.repoPath + "/yolo/cfg/custom-names-v4.txt"
 
 cw["yolo.416v5.64"] = {}
-cw["yolo.416v5.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v5-64.cfg"
-cw["yolo.416v5.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v5-64_final.weights"
-#cw["yolo.416v5.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v5-64_last.weights"
-cw["yolo.416v5.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-v4.txt"
+cw["yolo.416v5.64"]["configPath"] = args.repoPath + "/yolo/cfg/yolov-tiny-custom-416v5-64.cfg"
+cw["yolo.416v5.64"]["weightsPath"] = args.communityCatsPath + "/custom_data/backup/yolov-tiny-custom-416v5-64_final.weights"
+#cw["yolo.416v5.64"]["weightsPath"] = args.communityCatsPath + "/custom_data/backup/yolov-tiny-custom-416v5-64_last.weights"
+cw["yolo.416v5.64"]["coconames"] = args.repoPath + "/yolo/cfg/custom-names-v4.txt"
 
 
 cw["yolo.416v6.64"] = {}
-cw["yolo.416v6.64"]["configPath"] = "/z/camera/catDectionSystem/yolo/cfg/yolov-tiny-custom-416v6-64.cfg"
-cw["yolo.416v6.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v6-64_final.weights"
-#cw["yolo.416v6.64"]["weightsPath"] = "/z/camera/communitycats/custom_data/backup/yolov-tiny-custom-416v6-64_last.weights"
-cw["yolo.416v6.64"]["coconames"] = "/z/camera/catDectionSystem/yolo/cfg/custom-names-v4.txt"
+cw["yolo.416v6.64"]["configPath"] = args.repoPath + "/yolo/cfg/yolov-tiny-custom-416v6-64.cfg"
+cw["yolo.416v6.64"]["weightsPath"] = args.communityCatsPath + "/custom_data/backup/yolov-tiny-custom-416v6-64_final.weights"
+#cw["yolo.416v6.64"]["weightsPath"] = args.communityCatsPath + "/custom_data/backup/yolov-tiny-custom-416v6-64_last.weights"
+cw["yolo.416v6.64"]["coconames"] = args.repoPath + "/yolo/cfg/custom-names-v4.txt"
 
 
 cw["yolo.9k"] = {}
@@ -164,7 +167,11 @@ def ResizeWithAspectRatio(image, width=None, height=None, inter=cv2.INTER_AREA):
 def getObjects(imgObject, net, confThres, confThresCutOff, nmsThersh, scaleFactor=1/300, netSize=(416,416), frameCounter=0, lastIndexes=[]):
     img = imgObject["image"]
     layers = net.getLayerNames()
-    output_layers = [layers[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+#    pp.pprint(layers)
+#    pp.pprint(net.getUnconnectedOutLayers())
+
+    i = net.getUnconnectedOutLayers()        
+    output_layers = [layers[i[0] - 1]]
     data = []
     mergeIndexes = []
     height, width = img.shape[:2]
@@ -307,6 +314,7 @@ def getObjects(imgObject, net, confThres, confThresCutOff, nmsThersh, scaleFacto
     return img, is_cat, data, lastIndexes
 
 def queueFrames(quitEvent, videoObject, videoQueueLoop):
+    time.sleep(5)
     v = videoObject['videoFile']
     vc = videoObject['comment']
     vidImgFiles = []
@@ -343,28 +351,30 @@ def queueFrames(quitEvent, videoObject, videoQueueLoop):
                     return
             framesIn.put({ "noimage": True, "path": v })                    
             if re.search("^rtsp", v):
-                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|reorder_queue_size;200|buffer_size;1048576"
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|reorder_queue_size;200|buffer_size;1048576|hwaccel;h264_videotoolbox"
                 videoStreamType = "rtsp"
                 #print("stream type (1) : %s" % ( videoStreamType) )
             else:
-                vid = ffmpeg.probe(v)
-                for stream in vid['streams']:
-                    #print ("Opening video %s code:[%s][%s] " % ( v,stream['codec_type'], stream['codec_name']))
-                    if  stream['codec_type'] == "video" and not args.arm: 
-                        videoStreamType = "video"
-                        if stream['codec_name'] == "h264":
-                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;h264_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
-                        elif stream['codec_name'] == "hevc" or stream['codec_name'] == "h265":
-                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;hevc_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
-                        elif stream['codec_name'] == "png" or stream['codec_name'] == "mjpeg" or stream['codec_name'] == "jpeg":
-                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
-                            videoStreamType = "image"
-                        else: 
-                            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
-                            videoStreamType = "file"
-                    else:
-                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
-                        videoStreamType = "video"
+#                vid = ffmpeg.probe(v)
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+                videoStreamType = "video"
+#                 for stream in vid['streams']:
+#                     #print ("Opening video %s code:[%s][%s] " % ( v,stream['codec_type'], stream['codec_name']))
+#                     if  stream['codec_type'] == "video" and not args.arm: 
+#                         videoStreamType = "video"
+#                         if stream['codec_name'] == "h264":
+#                             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;h264_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
+#                         elif stream['codec_name'] == "hevc" or stream['codec_name'] == "h265":
+#                             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;hevc_cuvid|hwaccel;cuda|hwaccel_output_format;cuda"
+#                         elif stream['codec_name'] == "png" or stream['codec_name'] == "mjpeg" or stream['codec_name'] == "jpeg":
+#                             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+#                             videoStreamType = "image"
+#                         else: 
+#                             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+#                             videoStreamType = "file"
+#                     else:
+#                         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = ""
+#                         videoStreamType = "video"
                         
             #print("stream type : %s" % ( videoStreamType) )
             #print("Openning stream : %s" % (v) )
@@ -409,6 +419,7 @@ def mainLoop(quitEvent, videoObject):
 #    net = cv2.dnn.readNetFromDarknet(cw[pkgVer]["configPath"],cw[pkgVer]["weightsPath"]);
 #    net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
 #    net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+    time.sleep(5)
     lastIndexes = []
     while not quitEvent.is_set():
         is_cat = False
@@ -426,8 +437,10 @@ def mainLoop(quitEvent, videoObject):
             if imgObject["noimage"]:
                 #print (" ============ New File / Reseting DNN ===================\n")
                 net = cv2.dnn.readNetFromDarknet(cw[pkgVer]["configPath"],cw[pkgVer]["weightsPath"]);
-                net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-                net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)    
+#                 net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+#                 net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)    
+                net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                net.setPreferableTarget(cv2.dnn.DNN_TARGET_OPENCL)
                 #net.setPreferableTarget(cv2.dnn.DNN_TARGET_OPENCL)
                 #time.sleep(2)
                 continue
@@ -681,41 +694,42 @@ if __name__ == "__main__":
 
 
     
-    displayImageThread = threading.Thread(target=displayImage, args=(quitEvent, videoObject, ))
+#    displayImageThread = threading.Thread(target=displayImage, args=(quitEvent, videoObject, ))
     mainLoopThread = threading.Thread(target=mainLoop, args=(quitEvent, videoObject, ))
     queueFramesThread = threading.Thread(target=queueFrames, args=(quitEvent, videoObject, videoQueueLoop ))
 
-    displayImageThread.start()
-    time.sleep(1)
+#    displayImageThread.start()
+#    time.sleep(1)
     queueFramesThread.start()
     mainLoopThread.start()
+    displayImage(quitEvent, videoObject)
     #time.sleep(1)
-    while not quitEvent.is_set():
-        try:
-            while not quitEvent.is_set():
-                if not mainLoopThread.is_alive() and not quitEvent.is_set():
-                    mainLoopThread = threading.Thread(target=mainLoop, args=(quitEvent, videoObject, ))
-                    mainLoopThread.start()
-                if not displayImageThread.is_alive() and not quitEvent.is_set():
-                    displayImageThread = threading.Thread(target=displayImage, args=(quitEvent, videoObject, ))
-                    displayImageThread.start()
-                if not queueFramesThread.is_alive() and not quitEvent.is_set():
-                    queueFramesThread = threading.Thread(target=queueFrames, args=(quitEvent, videoObject, videoQueueLoop ))
-                    queueFramesThread.start()
-                mainLoopThread.join(1)
-                displayImageThread.join(1)
-                queueFramesThread.join(1)
-                if args.writeImages:
-                    writeImagesThread.join(1)
-                    writeImagesThread2.join(1)
-                    writeImagesThread3.join(1)
-        except KeyboardInterrupt:
-            quitEvent.set()
-            queueFramesThread.join(5)
-            displayImageThread.join(5)
-            if args.writeImages:
-                writeImagesThread.join(5)
-                writeImagesThread2.join(5)
-                writeImagesThread3.join(5)
-            sys.exit(0)
-
+#     while not quitEvent.is_set():
+#         try:
+#             while not quitEvent.is_set():
+#                 if not mainLoopThread.is_alive() and not quitEvent.is_set():
+#                     mainLoopThread = threading.Thread(target=mainLoop, args=(quitEvent, videoObject, ))
+#                     mainLoopThread.start()
+#                 if not displayImageThread.is_alive() and not quitEvent.is_set():
+#                     displayImageThread = threading.Thread(target=displayImage, args=(quitEvent, videoObject, ))
+#                     displayImageThread.start()
+#                 if not queueFramesThread.is_alive() and not quitEvent.is_set():
+#                     queueFramesThread = threading.Thread(target=queueFrames, args=(quitEvent, videoObject, videoQueueLoop ))
+#                     queueFramesThread.start()
+#                 mainLoopThread.join(1)
+#                 displayImageThread.join(1)
+#                 queueFramesThread.join(1)
+#                 if args.writeImages:
+#                     writeImagesThread.join(1)
+#                     writeImagesThread2.join(1)
+#                     writeImagesThread3.join(1)
+#         except KeyboardInterrupt:
+#             quitEvent.set()
+#             queueFramesThread.join(5)
+#             displayImageThread.join(5)
+#             if args.writeImages:
+#                 writeImagesThread.join(5)
+#                 writeImagesThread2.join(5)
+#                 writeImagesThread3.join(5)
+#             sys.exit(0)
+# 

@@ -10,6 +10,7 @@ import re
 import uuid
 import hashlib
 import shutil
+from PIL import Image
  
  
 def get_checksum(filename, hash_function):
@@ -78,13 +79,14 @@ for root, dirs, files in os.walk(args.dir, topdown=False):
                     xmlfiles.append(os.path.join(root, name))
             except:
                 xmlfiles.append(os.path.join(root, name))
-xmlfiles.sort()                
+xmlfiles.sort()
 printLabels()
 for xmlfile in xmlfiles:
     f = open(xmlfile,'r')
     xml = simplexml.loads( f.read() )
     f.close()
-    #pp.pprint(xml)
+    jpgfile = re.sub(r'\.(xml)$', ".jpg", xmlfile )
+#    pp.pprint(xml)
 
     # <object-class-id> <x-centre> <y-centre> <width> <height>
     # <object-class-id> an integer from 0 to (classes - 1) corresponding to the classes in the custom_data/custom.names file
@@ -95,16 +97,36 @@ for xmlfile in xmlfiles:
     # <y-centre> : y / height
     # <width> : w / width
     # <height> : h / height
+
+    try:
+        image = Image.open(jpgfile)
+    except FileNotFoundError:
+        continue
     
     try:
         height = int(xml['annotation']['size']['height'])
         width = int(xml['annotation']['size']['width'])
     except:
         #img = cv2.imread(jpgfile)
-        #(height, width) = img.shape[:2]        
+        #(height, width) = img.shape[:2]
+        xml['annotation']['size'] = {}
+        xml['annotation']['size']['height']  = image.height
+        xml['annotation']['size']['width']   = image.width
+        height = image.height
+        width  = image.width
+
+    try:
+        xml['annotation']['imagefilename'] = os.path.basename(jpgfile)
+        xml['annotation']['filename'] = os.path.basename(jpgfile)
+        mydir = os.path.dirname(jpgfile)
+        xml['annotation']['path'] = mydir
+        xml['annotation']['folder'] = os.path.basename(mydir)
+    except:
         pass
+        
     data = ""
     objects = []
+
     try: 
         if isinstance(xml['annotation']['object'], list):
             objects = xml['annotation']['object']
@@ -135,6 +157,7 @@ for xmlfile in xmlfiles:
                     "percent": 0,
                     'area': area,
                     'pix': 0,
+                    'changeto': None 
                     }
         try:
             data['changeto'] = args.changeto
@@ -142,14 +165,20 @@ for xmlfile in xmlfiles:
             pass
         try:
             if len(objects) == 1:
-                xml['annotation']['object']["name"] = args.changeto
+                if args.changeto is not None:
+                    xml['annotation']['object']["name"] = args.changeto
             else:
-                xml['annotation']['object'][i]["name"] = args.changeto
+                if args.changeto is not None:
+                    xml['annotation']['object'][i]["name"] = args.changeto
         except:
             pass
         i += 1
         printDataLine(d=data)
 
+#    pp.pprint(xml)
+
+#    xmlfile_new = re.sub(r'\.(xml)$', "-size.xml", xmlfile )
+    
     f = open(xmlfile,'w')
     f.write(simplexml.dumps(xml))
     f.close

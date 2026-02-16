@@ -1,0 +1,1 @@
+python rtsp-object-ident.py --repoPath /Users/dpd/Documents/projects/github/catDectionSystem --communityCatsPath /Volumes/camera/communitycats --uri rtsp://admin:cwvqYgGn4vjGN3oKYdVBj@c4.dpdtech.com:554/h264Preview_01_main

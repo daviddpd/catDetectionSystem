@@ -16,7 +16,7 @@ pp = pprint.PrettyPrinter(indent=4)
 CONF_THRESH, NMS_THRESH = 0.9, 0.5
             
 classNames = []
-soundMeow = "/z/camera/Meow-cat-sound-effect.mp3"
+soundMeow = "assests/Meow-cat-sound-effect.mp3"
 pygame.mixer.init()
 pygame.mixer.music.load(soundMeow)
 #pygame.mixer.music.play()
@@ -334,7 +334,7 @@ def openVideoStream():
     v = videoObject['videoFile']
     
     if re.search("^rtsp", v):
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;|hwaccel;h264_videotoolbox"
         print("This is rtsp stream.")
     else:
         vid = ffmpeg.probe(v)
