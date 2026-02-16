@@ -1,4 +1,5 @@
 tools/c2
 tools/c3
 tools/referenceVideos
-
+.DS_Store
+__pycache__
