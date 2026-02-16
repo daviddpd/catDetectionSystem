@@ -10,13 +10,20 @@ import threading
 import signal
 import sys
 import ffmpeg
+from pathlib import Path
 
 
 pp = pprint.PrettyPrinter(indent=4)
 CONF_THRESH, NMS_THRESH = 0.9, 0.5
             
 classNames = []
-soundMeow = "assests/Meow-cat-sound-effect.mp3"
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_sound_filename = "Meow-cat-sound-effect.mp3"
+_sound_candidates = (
+    _SCRIPT_DIR / "assets" / _sound_filename,
+    _SCRIPT_DIR / "assests" / _sound_filename,
+)
+soundMeow = str(next((p for p in _sound_candidates if p.is_file()), _sound_candidates[-1]))
 pygame.mixer.init()
 pygame.mixer.music.load(soundMeow)
 #pygame.mixer.music.play()
@@ -78,7 +85,8 @@ colorsPencils['maraschino'] = (0, 38, 255)
 colorsPencils['tangerine'] = (0, 147, 255)
 colorsPencils['lemon'] = (0, 251, 255)
 colorsPencils['blueberry'] = (255, 51, 4)
-colorsPencils['stawberry'] = (146, 47, 255)
+colorsPencils['strawberry'] = (146, 47, 255)
+colorsPencils['stawberry'] = colorsPencils['strawberry']  # Legacy key compatibility
 colorsPencils['snow'] = (255, 255, 255)
 colorsPencils['lead'] = (33, 33, 33)
 colorsPencils['turquoise'] = (255, 253, 0)
@@ -86,7 +94,7 @@ colors = []
 
 # colors[classNamesToIds['cat']]          = colorsPencils['blueberry']
 # colors[classNamesToIds['cat-domino']]   = colorsPencils['lemon']
-# colors[classNamesToIds['cat-kitten6']]    = colorsPencils['stawberry']
+# colors[classNamesToIds['cat-kitten6']]    = colorsPencils['strawberry']
 # colors[classNamesToIds['cat-olive']]    = colorsPencils['maraschino']
 # colors[classNamesToIds['opossum']]    = colorsPencils['lime']
 # colors[classNamesToIds['raccoon']]    = colorsPencils['tangerine']
@@ -97,7 +105,7 @@ colors = (colorsPencils['turquoise'],
           colorsPencils['tangerine'],
           colorsPencils['lime'],
           colorsPencils['maraschino'],
-          colorsPencils['stawberry'],
+          colorsPencils['strawberry'],
           colorsPencils['lemon'],
           colorsPencils['blueberry']
           )

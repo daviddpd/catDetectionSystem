@@ -44,7 +44,7 @@ Build a repeatable dataset workflow:
   - existing XML annotations produced by current scripts
 
 - Conversion:
-  - do not force reuse of `/Users/dpd/Documents/projects/github/catDectionSystem/tools/xml2txt.py`
+  - do not force reuse of `/Users/dpd/Documents/projects/github/catDetectionSystem/tools/xml2txt.py`
   - reuse it only if it is the cleanest path; otherwise replace with a new converter
   - generate YOLO label txt files and data YAML
 

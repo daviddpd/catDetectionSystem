@@ -26,12 +26,12 @@ def get_checksum(filename, hash_function):
     
 pp = pprint.PrettyPrinter(indent=4)
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--dir', help='directory to scane for XML files')
+parser.add_argument('--dir', help='Directory to scan for XML files.')
 parser.add_argument('--classes', help='text file of strings of the class names')
 parser.add_argument('--getClasses', help='get classes from XML files', default=False, action='store_true')
 parser.add_argument('--move', help='Move instead of copy', default=False, action='store_true')
-parser.add_argument('--dryrun', help='do not write or modifiy any files', default=False, action='store_true')
-parser.add_argument('--writetext', help='Write the TXT files even in dryrun ', default=False, action='store_true')
+parser.add_argument('--dryrun', help='Do not write or modify any files.', default=False, action='store_true')
+parser.add_argument('--writeText', '--writetext', dest='writeText', help='Write TXT files even in dryrun mode.', default=False, action='store_true')
 
 
 #parser.add_argument('--versionstr', help='Version/name of the training set')
@@ -137,18 +137,18 @@ for xmlfile in xmlfiles:
             classcounts["cat"] += 1
     if len(data) > 0:
         print (" === " + data)
-        if not args.dryrun or (args.dryrun and args.writetext): 
+        if not args.dryrun or (args.dryrun and args.writeText):
             f = open(txtfile,'w')
             f.write(data)
             f.close
             trainFiles.append(jpgfile)
-    imageAminial = ""
-    AminialInt = -1
+    imageAnimal = ""
+    animalIndex = -1
     for ic in imageClasses:
         i = classhash[ic]
-        if ( i > AminialInt ):
-            imageAminial = ic
-            AminialInt = i            
+        if ( i > animalIndex ):
+            imageAnimal = ic
+            animalIndex = i
     cs="01234567890123456789012345678901"
     if not args.dryrun:
         cs = get_checksum(jpgfile, "md5")
@@ -157,10 +157,10 @@ for xmlfile in xmlfiles:
     #                 1          2           3    
     csfmt = ("{}-{}-{}-{}-{}-{}").format( cs[0:4],cs[4:8],cs[8:12],cs[12:22],cs[22:26],cs[26:32]  )
     #xmlfile.split("/").
-    print ( " %-80s : (%4d x %4d) classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (xmlfile.replace("/z/camera/communitycats/custom_data/", ""), height, width, len(imageClasses), imageAminial, csfmt, imageClasses)) 
-    bn = "/z/camera/communitycats/custom_data/imagebyclass/" + imageAminial + "/" + csfmt
+    print ( " %-80s : (%4d x %4d) classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (xmlfile.replace("/z/camera/communitycats/custom_data/", ""), height, width, len(imageClasses), imageAnimal, csfmt, imageClasses))
+    bn = "/z/camera/communitycats/custom_data/imagebyclass/" + imageAnimal + "/" + csfmt
     bn_deleted = "/z/camera/communitycats/custom_data/disabled/deleted/" + csfmt
-    if AminialInt > -1 and not args.dryrun:
+    if animalIndex > -1 and not args.dryrun:
         if not os.path.isfile(bn + ".jpg") and not os.path.isfile(bn + ".xml"):
                 if not os.path.isfile(bn + ".txt") and os.path.isfile(txtfile):
                     try:
@@ -189,7 +189,7 @@ for xmlfile in xmlfiles:
                     except Exception as e:
                         print (" =ERROR=> copy/move :  " + xmlfile)
                         raise e 
-    elif AminialInt == -1 and not args.dryrun and args.move:
+    elif animalIndex == -1 and not args.dryrun and args.move:
         exts = ( ".txt", ".jpg", ".xml")
         for ext in exts:
             if os.path.isfile(bn + ext):
@@ -210,5 +210,4 @@ pp.pprint (classhash)
 # for data in trainFiles:
 #     f.write(data + "\n")
 # f.close
-
 

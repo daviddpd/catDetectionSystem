@@ -27,9 +27,9 @@ def get_checksum(filename, hash_function):
     
 pp = pprint.PrettyPrinter(indent=4)
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--dir', help='directory to scane for XML files')
+parser.add_argument('--dir', help='Directory to scan for XML files.')
 parser.add_argument('--re', help='RegEx to filter files by')
-parser.add_argument('--changeto', help='Change then Name/class.')
+parser.add_argument('--changeto', help='Change the object name/class.')
 
 args, _ = parser.parse_known_args()
 
@@ -183,5 +183,4 @@ for xmlfile in xmlfiles:
     f.write(simplexml.dumps(xml))
     f.close
         
-
 

@@ -13,6 +13,7 @@ import signal
 import sys
 import ffmpeg
 import random
+from pathlib import Path
 
 
 
@@ -25,45 +26,46 @@ def excludeClass(s):
         o['high'] = float(o['high'])
         return o
     except:
-        raise argparse.ArgumentTypeError("Must be ClassName,float,float; where floats are are between 0 and 1; percentage.")
+        raise argparse.ArgumentTypeError("Must be ClassName,float,float; where floats are between 0 and 1.")
 
 
 pp = pprint.PrettyPrinter(indent=4)
 _pid  = os.getpid()
 _name = sys.argv[0]
+_SCRIPT_DIR = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument('--uri', help='path to video file or rtsp ', required=True)
+parser.add_argument('--uri', help='Path to a video file or RTSP stream.', required=True)
 
-parser.add_argument('--ratein', help='fetch rate limite, frame rate denominator ( 1/VALUE )', default=0, type=int)
+parser.add_argument('--ratein', help='Fetch rate limit, frame rate denominator (1/VALUE).', default=0, type=int)
 
-parser.add_argument('--repoPath', help='gitRepo', default="/Volumes/camera/catDectionSystem")
-parser.add_argument('--communityCatsPath', help='community cats data directory', default="/Volumes/camera/communitycats")
+parser.add_argument('--repoPath', help='Repository path.', default=str(_SCRIPT_DIR))
+parser.add_argument('--communityCatsPath', help='Community cats data directory.', default="/Volumes/camera/communitycats")
 
-parser.add_argument('--writePath', help='path to save images', default="")
-parser.add_argument('--writeImages', help='Write Images with Objects detected',  default=False, action='store_true')
-parser.add_argument('--writeXmlOnly', help='Write XML with Objects detected, in the same directory as the source',  default=False, action='store_true')
+parser.add_argument('--writePath', help='Path to save images.', default="")
+parser.add_argument('--writeImages', help='Write images with objects detected.',  default=False, action='store_true')
+parser.add_argument('--writeXmlOnly', help='Write XML with objects detected in the same directory as the source.',  default=False, action='store_true')
 
-parser.add_argument('--writeImagesNotCats', help='Only write non-cat frames',  default=False, action='store_true')
+parser.add_argument('--writeImagesNotCats', help='Only write non-cat frames.',  default=False, action='store_true')
 parser.add_argument('--excludeClass', help="excludeClass,%,%", type=excludeClass, nargs=1, action='extend')
 
-parser.add_argument('--name', help='Window Name', default=_name + ":" + str(_pid) )
-parser.add_argument('--conf', help='confidence threshold', default=0.9, type=float)
-parser.add_argument('--confcutoff', help='confidence upper cutoff', default=1.1, type=float)
-parser.add_argument('--nms', help='NMS threshold', default=0.5 , type=float)
-parser.add_argument('--scalefactor', help='SCALE_FACTOR denominator ( 1/VALUE )', default=300, type=int)
-parser.add_argument('--scaleimg', help='Scale Image',  default=False, action='store_true')
-parser.add_argument('--areaReject', help='Reject Match if % pixel area is greater than this precent ', default=101.00 , type=float)
-parser.add_argument('--backframes', help='Track last X number of frames', default=10, type=int)
-parser.add_argument('--model', help='Model Name Bundle', default="yolo.416v6.64" )
+parser.add_argument('--name', help='Window name.', default=_name + ":" + str(_pid) )
+parser.add_argument('--conf', help='Confidence threshold.', default=0.9, type=float)
+parser.add_argument('--confcutoff', help='Confidence upper cutoff.', default=1.1, type=float)
+parser.add_argument('--nms', help='NMS threshold.', default=0.5 , type=float)
+parser.add_argument('--scalefactor', help='Scale factor denominator (1/VALUE).', default=300, type=int)
+parser.add_argument('--scaleimg', help='Scale image.',  default=False, action='store_true')
+parser.add_argument('--areaReject', help='Reject match if pixel area percent is greater than this value.', default=101.00 , type=float)
+parser.add_argument('--backframes', help='Track last X number of frames.', default=10, type=int)
+parser.add_argument('--model', help='Model name bundle.', default="yolo.416v6.64" )
 
-parser.add_argument('--quiet', help='Turn text objects printing',  default=False, action='store_true')
+parser.add_argument('--quiet', help='Turn off text object printing.',  default=False, action='store_true')
 
-parser.add_argument('--nomeow', help='Turn off meow',  default=False, action='store_true')
-parser.add_argument('--shuffle', help='Shuffle File List',  default=False, action='store_true')
-parser.add_argument('--nodotfiles', help='ignore dot files in directories',  default=True, action='store_false')
-parser.add_argument('--wait', help='wait for keypress (set waitkey=0)',  default=False, action='store_true')
+parser.add_argument('--nomeow', help='Turn off meow.',  default=False, action='store_true')
+parser.add_argument('--shuffle', help='Shuffle file list.',  default=False, action='store_true')
+parser.add_argument('--nodotfiles', help='Ignore dot files in directories.',  default=True, action='store_false')
+parser.add_argument('--wait', help='Wait for key press (set waitkey=0).',  default=False, action='store_true')
 
-parser.add_argument('--arm', help='Run on ARM65',  default=False, action='store_true')
+parser.add_argument('--arm', help='Run on ARM64.',  default=False, action='store_true')
 
 
 
@@ -73,7 +75,12 @@ framesIn  = queue.Queue(30)
 framesOut = queue.Queue(30)
 framesToWrite = queue.Queue(300)
 classNames = []
-soundMeow = "assests/Meow-cat-sound-effect.mp3"
+_sound_filename = "Meow-cat-sound-effect.mp3"
+_sound_candidates = (
+    _SCRIPT_DIR / "assets" / _sound_filename,
+    _SCRIPT_DIR / "assests" / _sound_filename,
+)
+soundMeow = str(next((p for p in _sound_candidates if p.is_file()), _sound_candidates[-1]))
 _pygame_noSound = False
 if not args.nomeow:
     try:
@@ -130,7 +137,8 @@ colorsPencils['maraschino'] = (0, 38, 255)
 colorsPencils['tangerine'] = (0, 147, 255)
 colorsPencils['lemon'] = (0, 251, 255)
 colorsPencils['blueberry'] = (255, 51, 4)
-colorsPencils['stawberry'] = (146, 47, 255)
+colorsPencils['strawberry'] = (146, 47, 255)
+colorsPencils['stawberry'] = colorsPencils['strawberry']  # Legacy key compatibility
 colorsPencils['snow'] = (255, 255, 255)
 colorsPencils['lead'] = (33, 33, 33)
 colorsPencils['turquoise'] = (255, 253, 0)
@@ -140,7 +148,7 @@ colors = (colorsPencils['turquoise'],
           colorsPencils['tangerine'],
           colorsPencils['lime'],
           colorsPencils['maraschino'],
-          colorsPencils['stawberry'],
+          colorsPencils['strawberry'],
           colorsPencils['lemon'],
           colorsPencils['blueberry'],
           colorsPencils['lead'],
@@ -462,12 +470,12 @@ def mainLoop(quitEvent, videoObject):
         img, is_cat, data, lastIndexes  = getObjects(imgObject,net,CONF_THRESH, CONF_THRESH_CUTOFF,NMS_THRESH, SCALE_FACTOR, frameCounter=frameCounter, lastIndexes=lastIndexes)
         #pp.pprint(data)
         framesOut.put({ "image": img, "data": data, "videoStreamType": imgObject["videoStreamType"], "path": imgObject["path"] })
-        writeImagesOveride = True
+        writeImagesOverride = True
         if args.writeImagesNotCats:
             for d in data:
                 if d["is_cat"]:
-                    writeImagesOveride = False
-        if args.writeImages and len(data)>0 and writeImagesOveride:
+                    writeImagesOverride = False
+        if args.writeImages and len(data)>0 and writeImagesOverride:
             framesToWrite.put({ "image": img2, "data": data, "videoStreamType": imgObject["videoStreamType"],  "path": imgObject["path"] })
        
 

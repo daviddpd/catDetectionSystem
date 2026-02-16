@@ -16,13 +16,13 @@ Stage dependency:
 - Do not add Windows support in this stage.
 
 ## Current System Snapshot (what exists now)
-- Main scripts are `/Users/dpd/Documents/projects/github/catDectionSystem/rtsp-object-ident.py` and `/Users/dpd/Documents/projects/github/catDectionSystem/object-ident.py`.
+- Main scripts are `/Users/dpd/Documents/projects/github/catDetectionSystem/rtsp-object-ident.py` and `/Users/dpd/Documents/projects/github/catDetectionSystem/object-ident.py`.
 - Current detection path is OpenCV DNN + Darknet config/weights loading via `cv2.dnn.readNetFromDarknet(...)`.
 - Current runtime uses threads and queues (`framesIn`, `framesOut`, `framesToWrite`), but frame queues are blocking and can accumulate latency.
 - Video ingest is via OpenCV `VideoCapture(..., cv2.CAP_FFMPEG)` and manual `OPENCV_FFMPEG_CAPTURE_OPTIONS` env strings.
 - Model and path config are mostly hard-coded.
 - Audio alert (meow sound) is implemented with pygame.
-- Annotation export exists via XML writing and helper tools in `/Users/dpd/Documents/projects/github/catDectionSystem/tools/`.
+- Annotation export exists via XML writing and helper tools in `/Users/dpd/Documents/projects/github/catDetectionSystem/tools/`.
 
 ## Technology Decision (implement this)
 - Keep YOLO family as the primary detection approach.
