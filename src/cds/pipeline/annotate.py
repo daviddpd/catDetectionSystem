@@ -46,7 +46,7 @@ def draw_overlays(
             label,
             (detection.x1, max(20, detection.y1 - 8)),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.55,
+            1.2,
             color,
             2,
             cv2.LINE_AA,
