@@ -139,6 +139,25 @@ Bootstrap storage behavior:
   - `review_config.json`
 - optional: use `--materialize-non-image-frames` to save extracted JPEGs for video/stream inputs
 
+Bootstrap/training boundary (important):
+- `bootstrap-openvocab` output is for review/curation and does not create `dataset/data.yaml`
+- training (`cds train`) expects a YOLO dataset root with `dataset/data.yaml`
+- generate that dataset with `cds dataset prepare` (XML -> YOLO) or equivalent manual assembly
+
+If your labeled source is already under `dataset/imagebyclass` (XML + images in subfolders), use:
+
+```bash
+./cds dataset prepare \
+  --xml-root dataset/imagebyclass \
+  --image-root dataset/imagebyclass \
+  --output-root dataset \
+  --split-mode deterministic
+./cds dataset validate --dataset-root dataset
+./cds train --config config/train.yaml --dataset dataset/data.yaml --device mps
+```
+
+`cds dataset prepare` auto-repairs missing/invalid XML image size fields from actual image dimensions when possible, and reports unrecoverable files in `dataset/reports/dataset_manifest.json`.
+
 Useful open datasets for augmentation/bootstrap:
 - [Open Images V7](https://docs.ultralytics.com/datasets/detect/open-images-v7/)
 - [LILA Camera Trap datasets](https://lila.science/datasets/)

@@ -93,6 +93,11 @@ Use YOLO-World to quickly generate reviewable pseudo-labels:
 
 The class list must include all required classes above.
 
+Important:
+- bootstrap output is a review/curation artifact, not a direct training dataset package
+- `bootstrap-openvocab` does not generate `dataset/data.yaml`
+- Step 5 does not replace Step 4 for training
+
 Default storage behavior (important):
 - for image sources, bootstrap does not copy original images into `artifacts`
 - absolute source image paths are stored in manifest/config output files
@@ -123,6 +128,52 @@ Outputs are written to a versioned run folder:
 
 No XML files are generated in bootstrap output.
 
+### What maps to train/eval/export config files
+
+`bootstrap-openvocab` run folder example:
+- `artifacts/models/bootstrap-openvocab-20260217-043812/bootstrap/review/...`
+
+How these map (and do not map):
+- `bootstrap/review/predictions.jsonl`, `review_manifest.jsonl`, `review_config.json`
+  - for review/curation workflows
+  - not used directly by `config/train.yaml`, `config/eval.yaml`, or `config/export.yaml`
+- `dataset/data.yaml`
+  - required by training (`config/train.yaml -> dataset.data_yaml`)
+  - produced by Step 4 (`cds dataset prepare ...`) or by manual YOLO dataset assembly
+- `artifacts/models/<train-run-id>/checkpoints/best.pt`
+  - produced by Step 6 training
+  - used by evaluation/export (`--model` override or config model path)
+
+### Existing labeled data flow (your `dataset/imagebyclass` case)
+
+If your source tree already contains image + XML (and optional legacy YOLO txt) in subfolders, run Step 4 with explicit roots:
+
+```bash
+./cds dataset prepare \
+  --xml-root dataset/imagebyclass \
+  --image-root dataset/imagebyclass \
+  --output-root dataset \
+  --split-mode deterministic
+```
+
+Then validate:
+
+```bash
+./cds dataset validate --dataset-root dataset
+```
+
+Then train/eval/export:
+
+```bash
+./cds train --config config/train.yaml --dataset dataset/data.yaml --device mps
+./cds evaluate --config config/eval.yaml --model artifacts/models/<train-run-id>/checkpoints/best.pt
+./cds export --config config/export.yaml --model artifacts/models/<train-run-id>/checkpoints/best.pt --output-dir artifacts/models/<train-run-id> --targets all
+```
+
+Notes:
+- the XML files are what `cds dataset prepare` converts; existing `.txt` labels in the source tree are ignored by that command
+- if you skip Step 4, training cannot use bootstrap artifacts as a drop-in replacement dataset
+
 ## Dataset Build and Validation
 
 ### Prepare from XML annotations
@@ -133,6 +184,8 @@ No XML files are generated in bootstrap output.
 
 This pipeline:
 - converts Pascal VOC XML to YOLO txt labels
+- if XML `size/width|height` is missing/invalid, attempts auto-repair from image dimensions and writes corrected XML
+- skips XML/image pairs only when size cannot be recovered, and reports them in `dataset/reports/dataset_manifest.json` under `size_repair.skipped_xml`
 - generates deterministic or time-aware splits
 - validates dataset health (bounds, duplicates, empties, class IDs)
 - writes reports under `dataset/reports/`
