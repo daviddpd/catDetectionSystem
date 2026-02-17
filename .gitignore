@@ -12,3 +12,8 @@ dataset/labels_raw/
 dataset/reports/
 dataset/splits/
 *.pt
+.venv310
+.venv*
+*.mlpackage
+*.mlmodel
+*.onnx

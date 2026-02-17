@@ -9,6 +9,7 @@ Use this runbook when your current runtime model is OpenCV/Darknet:
 
 - `cds export` currently supports source models in `.pt` or `.onnx`.
 - direct `.cfg` + `.weights` export to every target is not currently implemented in `cds export`.
+- ONNX -> PyTorch checkpoint (`.pt`) is not a supported round-trip path in this project.
 
 ## Step 1: Run current Darknet model (no conversion)
 
@@ -23,13 +24,13 @@ Use this runbook when your current runtime model is OpenCV/Darknet:
 
 ## Step 2: Create ONNX bridge artifact from Darknet model
 
-One example external converter is [darknet-onnx](https://github.com/james77777778/darknet-onnx).
+One example external converter is [darknet-onnx](https://github.com/daviddpd/darknet-onnx).
 
 Example flow:
 
 ```bash
 export CDS_REPO=/path/to/catDetectionSystem
-git clone https://github.com/james77777778/darknet-onnx.git
+git clone https://github.com/daviddpd/darknet-onnx.git
 cd darknet-onnx
 python3 -m venv .venv
 source .venv/bin/activate

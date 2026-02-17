@@ -73,7 +73,7 @@ Important:
 - direct `.cfg`/`.weights` export to all targets is not built into `cds export`.
 
 Documented bridge flow:
-1. Convert Darknet to ONNX with an external converter (example: [darknet-onnx](https://github.com/james77777778/darknet-onnx)).
+1. Convert Darknet to ONNX with an external converter (example: [darknet-onnx](https://github.com/daviddpd/darknet-onnx)).
 2. Use `cds export` from that ONNX for `onnx,rknn`.
 3. For full multi-target output (`onnx,coreml,tensorrt,rknn`), use a `.pt` checkpoint and run `cds export --targets all`.
 
