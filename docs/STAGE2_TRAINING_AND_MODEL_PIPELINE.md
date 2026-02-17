@@ -93,15 +93,29 @@ Use YOLO-World to quickly generate reviewable pseudo-labels:
 
 The class list must include all required classes above.
 
+Default storage behavior (important):
+- for image sources, bootstrap does not copy original images into `artifacts`
+- absolute source image paths are stored in manifest/config output files
+- this avoids duplicating large remote/local datasets
+- if you need JPEGs materialized for non-image sources (video/stream), add `--materialize-non-image-frames`
+
 ### Bootstrap Output Files and Formats
 
 Outputs are written to a versioned run folder:
 - `artifacts/models/<run-id>/bootstrap/review/images/`
-  - extracted review frames/images (`.jpg`)
+  - optional extracted review frames/images (`.jpg`) for non-image sources when materialization is enabled
 - `artifacts/models/<run-id>/bootstrap/review/labels/`
   - YOLO label files (`.txt`): `class_id x_center y_center width height` (normalized 0..1)
 - `artifacts/models/<run-id>/bootstrap/review/predictions.jsonl`
   - one JSON object per detection event
+- `artifacts/models/<run-id>/bootstrap/review/review_manifest.jsonl`
+  - one JSON object per frame/image containing:
+    - absolute `image_ref` (or source media path)
+    - label file path
+    - source type (`image`, `video`, `stream`, `unknown`)
+    - optional materialized image path when enabled
+- `artifacts/models/<run-id>/bootstrap/review/review_config.json`
+  - machine-readable config with absolute paths to class list, predictions JSONL, manifest JSONL, and label directory
 - `artifacts/models/<run-id>/bootstrap/review/classes.txt`
   - class prompt list used for this run
 - `artifacts/models/<run-id>/bootstrap/review/summary.json`

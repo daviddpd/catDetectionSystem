@@ -51,6 +51,19 @@ def _expand_sources(source: str) -> list[str]:
     return sources
 
 
+def _source_type_from_path(value: str) -> str:
+    path = Path(value).expanduser()
+    if path.exists() and path.is_file():
+        suffix = path.suffix.lower()
+        if suffix in _IMAGE_EXTS:
+            return "image"
+        if suffix in _VIDEO_EXTS:
+            return "video"
+    if value.startswith(("rtsp://", "http://", "https://")):
+        return "stream"
+    return "unknown"
+
+
 def run_bootstrap_openvocab(
     source: str,
     classes_csv: str,
@@ -59,6 +72,7 @@ def run_bootstrap_openvocab(
     conf: float = 0.25,
     imgsz: int = 640,
     max_frames: int = 0,
+    materialize_non_image_frames: bool = False,
 ) -> dict[str, Any]:
     classes = _parse_classes(classes_csv)
     _ensure_required_classes(classes)
@@ -89,6 +103,7 @@ def run_bootstrap_openvocab(
         )
 
     rows: list[dict[str, Any]] = []
+    frame_rows: list[dict[str, Any]] = []
     frame_count = 0
     detection_count = 0
     source_count = len(expanded_sources)
@@ -120,9 +135,23 @@ def run_bootstrap_openvocab(
             image_name = f"{source_tag}_frame-{frame_count:08d}.jpg"
             image_dest = review_images / image_name
             label_dest = review_labels / f"{Path(image_name).stem}.txt"
+            result_source = str(getattr(result, "path", source_item))
+            source_type = _source_type_from_path(result_source)
+            image_ref: str | None = None
+            materialized_image_path: str | None = None
 
-            if cv2 is not None and hasattr(result, "orig_img"):
+            if source_type == "image":
+                image_ref = str(Path(result_source).expanduser().resolve())
+            elif materialize_non_image_frames and cv2 is not None and hasattr(result, "orig_img"):
                 cv2.imwrite(str(image_dest), result.orig_img)
+                materialized_image_path = str(image_dest.resolve())
+                image_ref = materialized_image_path
+            else:
+                # For video/stream sources, retain absolute source path in manifest without copying frames.
+                try:
+                    image_ref = str(Path(result_source).expanduser().resolve())
+                except Exception:
+                    image_ref = result_source
 
             boxes = getattr(result, "boxes", None)
             names = getattr(result, "names", {}) or {}
@@ -148,7 +177,9 @@ def run_bootstrap_openvocab(
                     frame_events.append(
                         {
                             "frame_index": frame_count,
-                            "image": str(image_dest),
+                            "image": image_ref,
+                            "image_ref": image_ref,
+                            "image_materialized": materialized_image_path,
                             "label_file": str(label_dest),
                             "class_id": class_id,
                             "class_name": class_name,
@@ -163,6 +194,17 @@ def run_bootstrap_openvocab(
                 encoding="utf-8",
             )
             rows.extend(frame_events)
+            frame_rows.append(
+                {
+                    "frame_index": frame_count,
+                    "source": result_source,
+                    "source_type": source_type,
+                    "image_ref": image_ref,
+                    "image_materialized": materialized_image_path,
+                    "label_file": str(label_dest),
+                    "detection_count": len(frame_events),
+                }
+            )
 
     events_path = dirs["bootstrap"] / "review" / "predictions.jsonl"
     with events_path.open("w", encoding="utf-8") as handle:
@@ -171,6 +213,28 @@ def run_bootstrap_openvocab(
 
     class_list_path = dirs["bootstrap"] / "review" / "classes.txt"
     class_list_path.write_text("\n".join(classes) + "\n", encoding="utf-8")
+
+    review_manifest_path = dirs["bootstrap"] / "review" / "review_manifest.jsonl"
+    with review_manifest_path.open("w", encoding="utf-8") as handle:
+        for row in frame_rows:
+            handle.write(json.dumps(row, ensure_ascii=True) + "\n")
+
+    review_config_path = dirs["bootstrap"] / "review" / "review_config.json"
+    review_config_path.write_text(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "class_list": str(class_list_path),
+                "predictions_jsonl": str(events_path),
+                "review_manifest_jsonl": str(review_manifest_path),
+                "labels_dir": str(review_labels.resolve()),
+                "materialize_non_image_frames": materialize_non_image_frames,
+            },
+            ensure_ascii=True,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     summary = {
         "run_id": run_id,
@@ -182,8 +246,11 @@ def run_bootstrap_openvocab(
         "frame_count": frame_count,
         "detection_count": detection_count,
         "predictions": str(events_path),
+        "review_manifest": str(review_manifest_path),
+        "review_config": str(review_config_path),
         "review_images_dir": str(review_images),
         "review_labels_dir": str(review_labels),
+        "materialize_non_image_frames": materialize_non_image_frames,
     }
 
     summary_path = dirs["bootstrap"] / "review" / "summary.json"

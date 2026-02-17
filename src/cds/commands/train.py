@@ -32,6 +32,7 @@ def run_train(args: Any, repo_root: Path) -> int:
                 conf=float(args.conf),
                 imgsz=int(args.imgsz),
                 max_frames=int(args.max_frames),
+                materialize_non_image_frames=bool(args.materialize_non_image_frames),
             )
             print(json.dumps(summary, ensure_ascii=True, indent=2))
             return 0

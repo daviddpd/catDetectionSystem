@@ -83,6 +83,15 @@ Directory sources are scanned recursively for supported media:
 - images: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tif`, `.tiff`, `.webp`
 - videos: `.mp4`, `.mkv`, `.avi`, `.mov`, `.m4v`, `.webm`
 
+Bootstrap storage behavior:
+- image sources are not copied into `artifacts`; absolute source paths are stored in review manifests
+- labels are written under `artifacts/.../bootstrap/review/labels/`
+- review manifests/config are written under `artifacts/.../bootstrap/review/`:
+  - `predictions.jsonl`
+  - `review_manifest.jsonl`
+  - `review_config.json`
+- optional: use `--materialize-non-image-frames` to save extracted JPEGs for video/stream inputs
+
 Useful open datasets for augmentation/bootstrap:
 - [Open Images V7](https://docs.ultralytics.com/datasets/detect/open-images-v7/)
 - [LILA Camera Trap datasets](https://lila.science/datasets/)
@@ -118,4 +127,3 @@ Detailed docs:
 - `docs/runbooks/coreml.md`
 - `docs/runbooks/tensorrt.md`
 - `docs/runbooks/rknn.md`
-

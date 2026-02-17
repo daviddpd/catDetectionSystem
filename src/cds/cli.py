@@ -129,6 +129,11 @@ def _build_parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--conf", type=float, default=0.25, help="Confidence threshold")
     bootstrap.add_argument("--imgsz", type=int, default=640, help="Inference image size")
     bootstrap.add_argument("--max-frames", type=int, default=0, help="Max frames/images (0 = all)")
+    bootstrap.add_argument(
+        "--materialize-non-image-frames",
+        action="store_true",
+        help="For video/stream sources, write extracted frame JPEGs into artifacts for review",
+    )
     bootstrap.add_argument("--output-dir", default="artifacts/models", help="Artifact output directory")
 
     al = train_sub.add_parser("active-learning", help="Active learning queue and merge utilities")
