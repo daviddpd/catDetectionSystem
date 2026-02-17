@@ -1,0 +1,73 @@
+[model]
+name = "communitycats"
+# For Ultralytics backend (.pt/.onnx/.engine/.mlpackage/.rknn)
+path = "/abs/path/to/model.pt"
+# For OpenCV/Darknet fallback backend
+cfg_path = "/abs/path/to/yolov-tiny-custom-416v6-64.cfg"
+weights_path = "/abs/path/to/yolov-tiny-custom-416v6-64_final.weights"
+labels_path = "yolo/cfg/custom-names-v4.txt"
+confidence = 0.5
+nms = 0.5
+imgsz = 640
+class_filter = ["cat", "cat-domino", "raccoon", "opossum", "skunk"]
+
+[backend_policy]
+requested = "auto"
+allow_darknet_fallback = true
+allow_rknn = true
+allow_tensorrt = true
+
+[ingest]
+uri = "rtsp://user:pass@camera/stream"
+backend = "auto"
+queue_size = 2
+rate_limit_fps = 0.0
+gstreamer_pipeline = ""
+
+[ingest.pyav_options]
+rtsp_transport = "tcp"
+fflags = "nobuffer"
+flags = "low_delay"
+max_delay = "500000"
+
+[output]
+headless = false
+window_name = "catDetectionSystem"
+remote_enabled = false
+remote_host = "0.0.0.0"
+remote_port = 8080
+remote_path = "/stream.mjpg"
+
+[triggers.audio]
+enabled = true
+cooldown_seconds = 15.0
+
+[triggers.audio.class_to_audio]
+cat = "assests/Meow-cat-sound-effect.mp3"
+"cat-domino" = "assests/Meow-cat-sound-effect.mp3"
+"cat-olive" = "assests/Meow-cat-sound-effect.mp3"
+"cat-bean" = "assests/Meow-cat-sound-effect.mp3"
+
+[triggers.hooks]
+enabled = false
+allowlist = ["/usr/local/bin/cds-hook"]
+max_workers = 4
+
+[[triggers.hooks.rules]]
+classes = ["cat"]
+command = ["/usr/local/bin/cds-hook", "cat"]
+timeout_seconds = 5.0
+cooldown_seconds = 10.0
+payload_mode = "stdin"
+
+[monitoring]
+json_logs = false
+log_level = "INFO"
+stats_interval_seconds = 5.0
+prometheus_enabled = false
+prometheus_host = "0.0.0.0"
+prometheus_port = 9108
+event_stdout = true
+event_file = ""
+
+stress_sleep_ms = 0

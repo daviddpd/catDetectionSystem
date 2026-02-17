@@ -1,0 +1,3 @@
+from cds.detector.models.model_spec import ModelSpec
+
+__all__ = ["ModelSpec"]

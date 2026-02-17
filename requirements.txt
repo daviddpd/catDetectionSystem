@@ -1,5 +1,12 @@
-opencv-contrib-python
-ffmpeg
 numpy
+opencv-contrib-python
+ultralytics
+av
+dynaconf
+prometheus-client
+tomli; python_version < "3.11"
+
+# Legacy runtime compatibility
 pygame
 python-simplexml
+ffmpeg-python
