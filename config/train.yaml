@@ -1,0 +1,42 @@
+experiment:
+  name: communitycats-prod
+  artifact_root: artifacts/models
+
+dataset:
+  data_yaml: dataset/data.yaml
+
+model:
+  base: yolov8s.pt
+  imgsz: 640
+
+train:
+  epochs: 80
+  batch: 16
+  device: cpu
+  amp: true
+  workers: 4
+  patience: 20
+
+export:
+  enabled: true
+  targets: onnx,coreml,tensorrt,rknn
+
+gating:
+  required_classes:
+    - cat
+    - dog
+    - raccoon
+    - opossum
+    - fox
+    - squirrel
+    - bird
+    - skunk
+  recall_thresholds:
+    cat: 0.65
+    dog: 0.60
+    raccoon: 0.60
+    opossum: 0.60
+    fox: 0.55
+    squirrel: 0.60
+    bird: 0.55
+    skunk: 0.60

@@ -1,0 +1,40 @@
+model:
+  path: artifacts/models/latest/checkpoints/best.pt
+
+dataset:
+  data_yaml: dataset/data.yaml
+  split: val
+
+eval:
+  device: cpu
+  imgsz: 640
+  batch: 16
+  conf: 0.25
+
+gating:
+  required_classes:
+    - cat
+    - dog
+    - raccoon
+    - opossum
+    - fox
+    - squirrel
+    - bird
+    - skunk
+  recall_thresholds:
+    cat: 0.65
+    dog: 0.60
+    raccoon: 0.60
+    opossum: 0.60
+    fox: 0.55
+    squirrel: 0.60
+    bird: 0.55
+    skunk: 0.60
+
+subgroups:
+  enabled: false
+  day_data_yaml: ""
+  night_data_yaml: ""
+
+latency:
+  runtime_benchmark_file: ""

@@ -4,9 +4,19 @@ ultralytics
 av
 dynaconf
 prometheus-client
+onnx
+onnxruntime
+PyYAML
+# YOLO-World text encoder dependency used by bootstrap-openvocab
+clip @ git+https://github.com/ultralytics/CLIP.git
 tomli; python_version < "3.11"
 
 # Legacy runtime compatibility
 pygame
 python-simplexml
 ffmpeg-python
+
+# Optional host-specific conversion extras:
+# coremltools      # macOS CoreML export hosts
+# tensorrt         # NVIDIA TensorRT export hosts
+# rknn-toolkit2    # Rockchip conversion hosts

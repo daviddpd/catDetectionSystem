@@ -1,179 +1,121 @@
 # catDetectionSystem
 
-`catDetectionSystem` is a modular feral cat and urban wildlife detection runtime.
+`catDetectionSystem` provides:
+- Stage 1 low-latency detection runtime
+- Stage 2 reproducible training, evaluation, active learning, and multi-target packaging
 
-Stage 1 (February 16, 2026) introduces a new production-oriented runtime package and CLI:
-- package: `cds` (`src/cds`)
-- commands:
-  - `cds detect`
-  - `cds monitor`
-  - `cds doctor`
-
-Legacy scripts remain in place for compatibility:
-- `rtsp-object-ident.py`
-- `object-ident.py`
-- `run.sh`
-- `run-c4.sh`
-
-## Quick Start
+## TL;DR Quick Start
 
 1. Install dependencies.
-2. Run a capability probe:
 
 ```bash
-./cds doctor
+pip install -r requirements.txt
 ```
 
-3. Run detection:
+2. Check host readiness.
 
 ```bash
-./cds detect --uri /path/to/video.mp4 --headless
+./cds doctor --target all
 ```
 
-4. Interactive local window mode (default):
+3. Pull recommended baseline models for this host.
 
 ```bash
-./cds detect --uri rtsp://user:pass@camera/stream --model-path /path/to/model.pt
+./cds train prefetch-models
 ```
 
-## Runtime Architecture
-
-The Stage 1 runtime is organized to keep ingest, inference, and outputs decoupled:
-- `src/cds/detector/backends/`: detector backends and selection policy
-- `src/cds/detector/models/`: model specification
-- `src/cds/pipeline/`: runtime loop and low-latency queueing
-- `src/cds/io/ingest/`: PyAV/GStreamer/OpenCV ingest backends
-- `src/cds/io/output/`: local display, MJPEG sink, JSON event sink
-- `src/cds/monitoring/`: structured logging, stats, Prometheus metrics
-- `src/cds/config/`: Dynaconf-first config loading and defaults
-
-## Backend Selection Policy
-
-`cds detect` auto-selects inference backend using platform policy and logs both the selected backend and the reason:
-
-1. macOS Apple Silicon:
-- CoreML artifact path when provided (`.mlpackage`/`.mlmodel`)
-- fallback to Ultralytics on `mps`
-- fallback to CPU
-
-2. Linux + NVIDIA:
-- TensorRT engine path when available (`.engine` + TensorRT runtime)
-- fallback to CUDA
-- fallback to OpenCV GPU path (CUDA/OpenCL)
-- fallback to CPU
-
-3. Linux + Rockchip:
-- RKNN integration path
-- fallback to CPU
-
-4. Windows:
-- not supported in this stage
-
-## Ingest and Decode
-
-The ingest layer supports:
-- RTSP streams
-- local video files
-- image files/directories
-
-Low-latency behavior:
-- bounded ingest->infer queue (`size=1` or `size=2`)
-- latest-frame-wins policy
-- oldest frame dropped on queue full
-- dropped-frame count and effective FPS tracked in stats
-
-Decoder probing:
-- startup probes hardware decode capabilities
-- selected decoder path and rationale are logged every run
-
-### PyAV vs GStreamer vs OpenCV (Stage 1 decision)
-
-This stage adopts:
-- PyAV as the default advanced ingest/decode backend
-- optional GStreamer backend for Linux pipeline control cases
-- OpenCV ingest as compatibility fallback
-
-Rationale:
-- PyAV provides direct FFmpeg packet/frame control in Python.
-- GStreamer supports explicit pipeline and queue/leaky control (`appsink`) on Linux deployments.
-- OpenCV remains the simplest fallback and integrates directly with display overlays.
-
-## Output Modes
-
-Default mode:
-- local OpenCV window enabled
-- overlays include class, confidence, backend, and FPS
-
-Headless mode (`--headless`):
-- local window disabled
-- audio trigger disabled
-- remote video sink disabled
-- stdout event stream disabled
-
-Remote output:
-- optional MJPEG sink (`--remote-mjpeg`) with endpoint logged at startup
-
-## Triggers
-
-Stage 1 trigger subsystem is non-blocking:
-- audio trigger: class -> audio file map with per-class cooldown
-- external action hooks: class/event-based shell commands
-
-External hook safety controls:
-- command allowlist
-- cooldown/rate limiting
-- timeout
-- stdout/stderr audit logging
-
-## Configuration
-
-Configuration supports TOML/YAML/JSON through a Dynaconf-first loader.
-
-Search order (when `--config` is not provided):
-- `cds.toml`
-- `cds.yaml` / `cds.yml`
-- `cds.json`
-- `settings.toml` / `settings.yaml` / `settings.yml` / `settings.json`
-
-CLI flags override config values.
-
-A complete sample file is provided at:
-- `cds.toml.example`
-
-## Monitoring and Observability
-
-- structured logs with `--json-logs`
-- periodic stats line includes:
-  - `fps_in`
-  - `fps_infer`
-  - `dropped_frames`
-  - `queue_depth`
-  - `backend`
-  - `decoder`
-- optional Prometheus endpoint (`--prometheus`)
-- per-detection JSON events to stdout and/or file
-
-## Validation Utilities
-
-- stress mode (artificial inference delay):
+4. Prepare/validate dataset and run training.
 
 ```bash
-./cds detect --uri /path/to/video.mp4 --stress-sleep-ms 250 --headless
+./cds dataset prepare --config config/dataset.yaml
+./cds dataset validate --dataset-root dataset
+./cds train --config config/train.yaml
+./cds evaluate --config config/eval.yaml
+./cds export --config config/export.yaml --targets all
 ```
 
-- smoke script for RTSP/file/directory:
+## CLI Overview
+
+Primary command: `./cds`
+
+Runtime commands:
+- `cds detect`
+- `cds infer` (alias of `detect`)
+- `cds monitor`
+- `cds doctor --target runtime`
+
+Training/model commands:
+- `cds train`
+- `cds evaluate`
+- `cds export`
+- `cds dataset prepare`
+- `cds dataset validate`
+- `cds doctor --target training`
+
+Legacy compatibility alias:
+- `cds detect-c4`
+
+## Stage 2 Required Class Set
+
+Minimum canonical classes:
+- cat
+- dog
+- raccoon
+- opossum
+- fox
+- squirrel
+- bird
+- skunk
+
+## Bootstrap Data Source Notes
+
+Example bootstrap command:
 
 ```bash
-PYTHONPATH=src python3 tools/smoke_stage1.py \
-  --rtsp-uri rtsp://user:pass@camera/stream \
-  --video-file /path/to/video.mp4 \
-  --image-dir /path/to/images \
-  --model-path /path/to/model.pt
+./cds train bootstrap-openvocab \
+  --classes "cat,dog,raccoon,opossum,fox,squirrel,bird,skunk" \
+  --source /path/to/camera_data
 ```
 
-## Legacy Compatibility
+`--source` is typically your custom/local camera media root.
 
-The top-level `cds` wrapper now routes to the Stage 1 Python CLI for `detect`, `monitor`, and `doctor`.
+Directory sources are scanned recursively for supported media:
+- images: `.jpg`, `.jpeg`, `.png`, `.bmp`, `.tif`, `.tiff`, `.webp`
+- videos: `.mp4`, `.mkv`, `.avi`, `.mov`, `.m4v`, `.webm`
 
-Compatibility alias retained:
-- `cds detect-c4` (deprecated)
+Useful open datasets for augmentation/bootstrap:
+- [Open Images V7](https://docs.ultralytics.com/datasets/detect/open-images-v7/)
+- [LILA Camera Trap datasets](https://lila.science/datasets/)
+- [Caltech Camera Traps](https://lila.science/datasets/caltech-camera-traps/)
+- [NACTI](https://lila.science/datasets/nacti/)
+
+## XML Annotation Notes
+
+Stage 2 dataset prep accepts Pascal VOC XML as input and converts it to YOLO labels.
+
+References:
+- [PASCAL VOC](https://host.robots.ox.ac.uk/pascal/VOC/)
+- [Pascal VOC XML format overview](https://roboflow.com/formats/pascal-voc-xml)
+
+In this repo, XML is produced primarily by legacy annotation paths (`rtsp-object-ident.py` with XML options) or external labeling tools.
+
+## CLIP Dependency for YOLO-World
+
+YOLO-World bootstrap requires CLIP; this is included in `requirements.txt` as a VCS dependency:
+- `clip @ git+https://github.com/ultralytics/CLIP.git`
+
+## Config and Docs
+
+Sample configs are under `config/`:
+- `config/dataset.yaml`
+- `config/train.yaml`
+- `config/eval.yaml`
+- `config/export.yaml`
+- `config/runtime.yaml`
+
+Detailed docs:
+- `docs/STAGE2_TRAINING_AND_MODEL_PIPELINE.md`
+- `docs/runbooks/coreml.md`
+- `docs/runbooks/tensorrt.md`
+- `docs/runbooks/rknn.md`
+

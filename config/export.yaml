@@ -1,0 +1,8 @@
+model:
+  path: artifacts/models/latest/checkpoints/best.pt
+
+export:
+  output_dir: artifacts/models/manual-export
+  targets: all
+  imgsz: 640
+  half: false

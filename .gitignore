@@ -3,3 +3,12 @@ tools/c3
 tools/referenceVideos
 .DS_Store
 __pycache__
+artifacts/
+dataset/
+dataset/images/
+dataset/labels/
+dataset/images_raw/
+dataset/labels_raw/
+dataset/reports/
+dataset/splits/
+*.pt

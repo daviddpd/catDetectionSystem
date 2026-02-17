@@ -1,0 +1,19 @@
+dataset:
+  output_root: dataset
+  xml_root: annotations/xml
+  image_root: annotations/images
+  classes:
+    - cat
+    - dog
+    - raccoon
+    - opossum
+    - fox
+    - squirrel
+    - bird
+    - skunk
+  split_mode: deterministic
+  split_ratios:
+    train: 0.8
+    val: 0.1
+    test: 0.1
+  report: dataset/reports/dataset_health.json

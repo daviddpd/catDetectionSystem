@@ -1,0 +1,26 @@
+model:
+  name: communitycats
+  path: artifacts/models/latest/checkpoints/best.pt
+  labels_path: dataset/classes.txt
+  confidence: 0.5
+  nms: 0.5
+  imgsz: 640
+
+backend_policy:
+  requested: auto
+
+ingest:
+  uri: rtsp://user:pass@camera/stream
+  backend: auto
+  queue_size: 2
+
+output:
+  headless: false
+  window_name: catDetectionSystem
+  remote_enabled: false
+
+monitoring:
+  json_logs: false
+  log_level: INFO
+  stats_interval_seconds: 5.0
+  prometheus_enabled: false
