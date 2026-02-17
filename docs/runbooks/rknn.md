@@ -2,6 +2,9 @@
 
 Stage 2 generates RKNN conversion bundles even when conversion cannot run on the current host.
 
+If your source model is Darknet (`.cfg` + `.weights`), generate a bridge ONNX first:
+- `docs/runbooks/darknet-legacy-conversion.md`
+
 ## Supported Chip Families
 
 Toolkit2 family:

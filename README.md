@@ -55,6 +55,53 @@ Training/model commands:
 Legacy compatibility alias:
 - `cds detect-c4`
 
+## Darknet (`opencv-darknet`) to Export Formats
+
+Example legacy runtime command (your current `.cfg` + `.weights` pair):
+
+```bash
+./cds detect \
+  --backend opencv-darknet \
+  --cfg-path ./yolo/cfg/yolov-tiny-custom-416v6-64.cfg \
+  --weights-path ./yolo/weights/yolov-tiny-custom-416v6-64_final.weights \
+  --labels-path ./yolo/cfg/custom-names-v4.txt \
+  --uri /path/to/video_or_rtsp
+```
+
+Important:
+- `cds export` currently takes source models in `.pt` or `.onnx` format.
+- direct `.cfg`/`.weights` export to all targets is not built into `cds export`.
+
+Documented bridge flow:
+1. Convert Darknet to ONNX with an external converter (example: [darknet-onnx](https://github.com/james77777778/darknet-onnx)).
+2. Use `cds export` from that ONNX for `onnx,rknn`.
+3. For full multi-target output (`onnx,coreml,tensorrt,rknn`), use a `.pt` checkpoint and run `cds export --targets all`.
+
+Full copy/paste commands: `docs/runbooks/darknet-legacy-conversion.md`
+
+## Highest-Performance macOS Detect Command
+
+On Apple Silicon, the highest-performance path in this project is typically CoreML with a `.mlpackage` export.
+
+Export CoreML:
+
+```bash
+./cds export \
+  --model artifacts/models/<run-id>/checkpoints/best.pt \
+  --targets coreml \
+  --output-dir artifacts/models/<run-id>
+```
+
+Run detect with CoreML:
+
+```bash
+./cds detect \
+  --backend coreml \
+  --model-path artifacts/models/<run-id>/exports/<model>.mlpackage \
+  --labels-path dataset/classes.txt \
+  --uri /path/to/video_or_rtsp
+```
+
 ## Stage 2 Required Class Set
 
 Minimum canonical classes:
@@ -124,6 +171,7 @@ Sample configs are under `config/`:
 
 Detailed docs:
 - `docs/STAGE2_TRAINING_AND_MODEL_PIPELINE.md`
+- `docs/runbooks/darknet-legacy-conversion.md`
 - `docs/runbooks/coreml.md`
 - `docs/runbooks/tensorrt.md`
 - `docs/runbooks/rknn.md`

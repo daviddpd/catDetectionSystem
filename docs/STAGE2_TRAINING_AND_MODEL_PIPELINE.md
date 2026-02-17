@@ -219,6 +219,36 @@ Or export every supported target on host:
 
 Unsupported targets are skipped with explicit warnings in `export_report.json`.
 
+### Legacy OpenCV-Darknet (`.cfg` + `.weights`) migration
+
+If your runtime model is currently:
+- `--backend opencv-darknet`
+- `--cfg-path ./yolo/cfg/yolov-tiny-custom-416v6-64.cfg`
+- `--weights-path ./yolo/weights/yolov-tiny-custom-416v6-64_final.weights`
+
+Use this conversion guidance:
+- `cds export` currently accepts `.pt` or `.onnx` source models
+- direct `.cfg`/`.weights` export to all targets is not currently implemented in `cds export`
+- practical bridge:
+  - convert Darknet to ONNX with an external conversion tool
+  - run `cds export --model <bridge.onnx> --targets onnx,rknn`
+  - for full multi-target exports (`onnx,coreml,tensorrt,rknn`), export from a `.pt` checkpoint
+
+Runbook with exact commands:
+- `docs/runbooks/darknet-legacy-conversion.md`
+
+### Highest-performance detect path on macOS
+
+On Apple Silicon, use a CoreML export (`.mlpackage`) with `--backend coreml`:
+
+```bash
+./cds detect \
+  --backend coreml \
+  --model-path artifacts/models/<run-id>/exports/<model>.mlpackage \
+  --labels-path dataset/classes.txt \
+  --uri /path/to/video_or_rtsp
+```
+
 ## Toolchain Preflight
 
 Runtime preflight:

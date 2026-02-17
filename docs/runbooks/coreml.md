@@ -5,6 +5,9 @@
 - `ultralytics`, `onnx`, and `coremltools` installed
 - trained checkpoint (`best.pt`)
 
+If your source model is Darknet (`.cfg` + `.weights`) instead of `.pt`, first follow:
+- `docs/runbooks/darknet-legacy-conversion.md`
+
 ## Command
 
 ```bash

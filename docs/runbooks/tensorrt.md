@@ -6,6 +6,9 @@
 - `trtexec` available on `PATH`
 - `ultralytics`, `onnx`, `tensorrt` installed
 
+If your source model is Darknet (`.cfg` + `.weights`) instead of `.pt`, first follow:
+- `docs/runbooks/darknet-legacy-conversion.md`
+
 ## Command
 
 ```bash
