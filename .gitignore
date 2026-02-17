@@ -4,13 +4,8 @@ tools/referenceVideos
 .DS_Store
 __pycache__
 artifacts/
-dataset/
-dataset/images/
-dataset/labels/
-dataset/images_raw/
-dataset/labels_raw/
-dataset/reports/
-dataset/splits/
+/dataset/
+/dataset-cds/
 *.pt
 .venv310
 .venv*

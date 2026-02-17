@@ -9,7 +9,7 @@ labels_path = "yolo/cfg/custom-names-v4.txt"
 confidence = 0.5
 nms = 0.5
 imgsz = 640
-class_filter = ["cat", "cat-domino", "raccoon", "opossum", "skunk"]
+class_filter = ["cat", "raccoon", "opossum", "skunk"]
 
 [backend_policy]
 requested = "auto"

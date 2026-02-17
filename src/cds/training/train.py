@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cds.training.constants import DEFAULT_TRAIN_MODEL, REQUIRED_CLASSES
+from cds.training.constants import DEFAULT_TRAIN_MODEL
 from cds.training.export import export_model_artifacts
 from cds.training.paths import new_run_id, prepare_artifact_dirs
 from cds.utils.config_io import deep_merge, load_config_file
@@ -36,10 +36,28 @@ def _default_train_config() -> dict[str, Any]:
             "targets": "onnx,coreml,tensorrt,rknn",
         },
         "gating": {
-            "required_classes": REQUIRED_CLASSES,
-            "recall_thresholds": {name: 0.50 for name in REQUIRED_CLASSES},
+            "required_classes": [],
+            "recall_thresholds": {},
         },
     }
+
+
+def _validate_required_classes(cfg: dict[str, Any]) -> None:
+    gating = cfg.get("gating", {})
+    required_classes = [str(item).strip() for item in gating.get("required_classes", []) if str(item).strip()]
+    if not required_classes:
+        raise ValueError("train config must define non-empty gating.required_classes")
+
+    recall_thresholds = gating.get("recall_thresholds", {}) or {}
+    missing = [name for name in required_classes if name not in recall_thresholds]
+    if missing:
+        raise ValueError(
+            "train config gating.recall_thresholds missing required classes: "
+            + ", ".join(missing)
+        )
+
+    gating["required_classes"] = required_classes
+    cfg["gating"] = gating
 
 
 def load_train_config(config_path: str | None, cli_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -48,6 +66,7 @@ def load_train_config(config_path: str | None, cli_overrides: dict[str, Any] | N
     deep_merge(config, file_cfg)
     if cli_overrides:
         deep_merge(config, cli_overrides)
+    _validate_required_classes(config)
     return config
 
 

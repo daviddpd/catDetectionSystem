@@ -3,18 +3,18 @@ experiment:
   artifact_root: artifacts/models
 
 dataset:
-  data_yaml: dataset/data.yaml
+  data_yaml: dataset-cds/data.yaml
 
 model:
   base: yolov8s.pt
-  imgsz: 640
+  imgsz: 416
 
 train:
-  epochs: 80
+  epochs: 10
   batch: 16
   device: cpu
   amp: true
-  workers: 4
+  workers: 8
   patience: 20
 
 export:
@@ -27,16 +27,10 @@ gating:
     - dog
     - raccoon
     - opossum
-    - fox
-    - squirrel
-    - bird
     - skunk
   recall_thresholds:
     cat: 0.65
     dog: 0.60
     raccoon: 0.60
     opossum: 0.60
-    fox: 0.55
-    squirrel: 0.60
-    bird: 0.55
     skunk: 0.60

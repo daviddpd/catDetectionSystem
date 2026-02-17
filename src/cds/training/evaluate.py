@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cds.training.constants import REQUIRED_CLASSES
 from cds.utils.config_io import deep_merge, load_config_file
 
 
@@ -19,8 +18,8 @@ def _default_eval_config() -> dict[str, Any]:
             "conf": 0.25,
         },
         "gating": {
-            "required_classes": REQUIRED_CLASSES,
-            "recall_thresholds": {name: 0.50 for name in REQUIRED_CLASSES},
+            "required_classes": [],
+            "recall_thresholds": {},
         },
         "subgroups": {
             "enabled": False,
@@ -33,11 +32,30 @@ def _default_eval_config() -> dict[str, Any]:
     }
 
 
+def _validate_required_classes(cfg: dict[str, Any]) -> None:
+    gating = cfg.get("gating", {})
+    required_classes = [str(item).strip() for item in gating.get("required_classes", []) if str(item).strip()]
+    if not required_classes:
+        raise ValueError("eval config must define non-empty gating.required_classes")
+
+    recall_thresholds = gating.get("recall_thresholds", {}) or {}
+    missing = [name for name in required_classes if name not in recall_thresholds]
+    if missing:
+        raise ValueError(
+            "eval config gating.recall_thresholds missing required classes: "
+            + ", ".join(missing)
+        )
+
+    gating["required_classes"] = required_classes
+    cfg["gating"] = gating
+
+
 def load_eval_config(config_path: str | None, cli_overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = _default_eval_config()
     deep_merge(cfg, load_config_file(config_path))
     if cli_overrides:
         deep_merge(cfg, cli_overrides)
+    _validate_required_classes(cfg)
     return cfg
 
 
@@ -147,7 +165,7 @@ def run_evaluation(
         save_json=True,
     )
 
-    required_classes = list(cfg["gating"].get("required_classes", REQUIRED_CLASSES))
+    required_classes = list(cfg["gating"].get("required_classes", []))
     recall_thresholds = {
         name: float(value)
         for name, value in cfg["gating"].get("recall_thresholds", {}).items()

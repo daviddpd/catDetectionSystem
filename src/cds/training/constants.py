@@ -1,16 +1,5 @@
 from __future__ import annotations
 
-REQUIRED_CLASSES: list[str] = [
-    "cat",
-    "dog",
-    "raccoon",
-    "opossum",
-    "fox",
-    "squirrel",
-    "bird",
-    "skunk",
-]
-
 DEFAULT_BOOTSTRAP_MODEL = "yolov8s-worldv2.pt"
 DEFAULT_TRAIN_MODEL = "yolov8s.pt"
 

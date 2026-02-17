@@ -134,6 +134,26 @@ print("Exported", OUTPUT_PATH)
     }
 
 
+def _stage_export_artifact(artifact: Path, exports_dir: Path) -> Path:
+    if not artifact.exists():
+        return artifact
+
+    dest = exports_dir / artifact.name
+    if dest == artifact:
+        return artifact
+
+    if artifact.is_dir():
+        if dest.exists() and not dest.is_dir():
+            dest.unlink()
+        shutil.copytree(artifact, dest, dirs_exist_ok=True)
+        return dest
+
+    if dest.exists() and dest.is_dir():
+        shutil.rmtree(dest)
+    shutil.copy2(artifact, dest)
+    return dest
+
+
 def export_model_artifacts(
     model_path: Path,
     output_root: Path,
@@ -252,11 +272,7 @@ def export_model_artifacts(
             try:
                 export_path = yolo_model.export(format=fmt, imgsz=imgsz, half=half)
                 artifact = Path(str(export_path)).resolve()
-                if artifact.exists():
-                    dest = exports_dir / artifact.name
-                    if dest != artifact:
-                        shutil.copy2(artifact, dest)
-                    artifact = dest
+                artifact = _stage_export_artifact(artifact, exports_dir)
                 report["results"].append(
                     {
                         "target": target,

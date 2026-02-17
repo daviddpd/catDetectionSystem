@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import cv2
+import hashlib
 
 from cds.types import Detection
 
 
 def _color_for_label(label: str) -> tuple[int, int, int]:
-    seed = abs(hash(label))
-    b = 50 + (seed % 180)
-    g = 50 + ((seed >> 8) % 180)
-    r = 50 + ((seed >> 16) % 180)
+    # Use a deterministic hash so each class color is stable across process runs.
+    digest = hashlib.sha1(label.encode("utf-8")).digest()
+    b = 50 + (digest[0] % 180)
+    g = 50 + (digest[1] % 180)
+    r = 50 + (digest[2] % 180)
     return int(b), int(g), int(r)
 
 
@@ -19,13 +20,15 @@ def draw_overlays(
     backend: str,
     fps_infer: float,
 ) -> None:
-    top_y = 28
+    import cv2
+
+    top_y = 36
     cv2.putText(
         frame,
         f"backend={backend} fps={fps_infer:.2f}",
         (12, top_y),
         cv2.FONT_HERSHEY_SIMPLEX,
-        0.7,
+        1.2,
         (255, 255, 255),
         2,
         cv2.LINE_AA,
@@ -38,7 +41,7 @@ def draw_overlays(
             (detection.x1, detection.y1),
             (detection.x2, detection.y2),
             color,
-            2,
+            3,
         )
         label = f"{detection.label} {detection.confidence:.2f}"
         cv2.putText(
@@ -46,8 +49,8 @@ def draw_overlays(
             label,
             (detection.x1, max(20, detection.y1 - 8)),
             cv2.FONT_HERSHEY_SIMPLEX,
-            1.2,
+            1.5,
             color,
-            2,
+            3,
             cv2.LINE_AA,
         )

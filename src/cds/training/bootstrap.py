@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cds.training.constants import DEFAULT_BOOTSTRAP_MODEL, REQUIRED_CLASSES
+from cds.training.constants import DEFAULT_BOOTSTRAP_MODEL
 from cds.training.paths import new_run_id, prepare_artifact_dirs
 
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
@@ -21,15 +21,6 @@ def _parse_classes(raw: str) -> list[str]:
             deduped.append(value)
             seen.add(value)
     return deduped
-
-
-def _ensure_required_classes(classes: list[str]) -> None:
-    missing = [name for name in REQUIRED_CLASSES if name not in classes]
-    if missing:
-        raise ValueError(
-            "bootstrap-openvocab class list must include required classes: "
-            + ", ".join(missing)
-        )
 
 
 def _expand_sources(source: str) -> list[str]:
@@ -75,7 +66,8 @@ def run_bootstrap_openvocab(
     materialize_non_image_frames: bool = False,
 ) -> dict[str, Any]:
     classes = _parse_classes(classes_csv)
-    _ensure_required_classes(classes)
+    if not classes:
+        raise ValueError("bootstrap-openvocab requires at least one class in --classes")
 
     try:
         from ultralytics import YOLOWorld

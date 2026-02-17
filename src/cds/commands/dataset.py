@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from cds.training.constants import REQUIRED_CLASSES
 from cds.training.dataset.prepare import prepare_dataset_pipeline
 from cds.training.dataset.validate import validate_yolo_dataset
 from cds.utils.config_io import deep_merge, load_config_file, write_json
@@ -17,6 +16,15 @@ def _parse_classes(raw: str | None) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _require_classes(classes: list[str], context: str) -> list[str]:
+    filtered = [item for item in classes if item]
+    if not filtered:
+        raise ValueError(
+            f"{context} requires classes via --classes or config dataset.classes"
+        )
+    return filtered
+
+
 def run_dataset(args: Any, repo_root: Path) -> int:
     try:
         if args.dataset_command == "prepare":
@@ -25,14 +33,17 @@ def run_dataset(args: Any, repo_root: Path) -> int:
                     "output_root": "dataset",
                     "xml_root": "annotations/xml",
                     "image_root": None,
-                    "classes": list(REQUIRED_CLASSES),
+                    "classes": [],
                     "split_mode": "deterministic",
                     "split_ratios": {"train": 0.8, "val": 0.1, "test": 0.1},
                 }
             }
             deep_merge(cfg, load_config_file(args.config))
 
-            classes = _parse_classes(args.classes) or list(cfg["dataset"].get("classes", REQUIRED_CLASSES))
+            classes = _require_classes(
+                _parse_classes(args.classes) or list(cfg["dataset"].get("classes", [])),
+                "dataset prepare",
+            )
 
             output_root = Path(args.output_root or cfg["dataset"]["output_root"])
             xml_root = Path(args.xml_root or cfg["dataset"]["xml_root"])
@@ -65,7 +76,7 @@ def run_dataset(args: Any, repo_root: Path) -> int:
             cfg = {
                 "dataset": {
                     "root": "dataset",
-                    "classes": list(REQUIRED_CLASSES),
+                    "classes": [],
                     "report": "dataset/reports/dataset_health.json",
                 }
             }
@@ -75,7 +86,10 @@ def run_dataset(args: Any, repo_root: Path) -> int:
             if not dataset_root.is_absolute():
                 dataset_root = (repo_root / dataset_root).resolve()
 
-            classes = _parse_classes(args.classes) or list(cfg["dataset"].get("classes", REQUIRED_CLASSES))
+            classes = _require_classes(
+                _parse_classes(args.classes) or list(cfg["dataset"].get("classes", [])),
+                "dataset validate",
+            )
             report = validate_yolo_dataset(dataset_root, classes)
 
             report_path = Path(args.report or cfg["dataset"].get("report", dataset_root / "reports" / "dataset_health.json"))
