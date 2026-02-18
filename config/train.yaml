@@ -6,11 +6,11 @@ dataset:
   data_yaml: dataset-cds/data.yaml
 
 model:
-  base: yolov8s.pt
+  base: artifacts/models/communitycats-prod-20260217-201910/checkpoints/best.pt
   imgsz: 416
 
 train:
-  epochs: 10
+  epochs: 80
   batch: 16
   device: cpu
   amp: true
