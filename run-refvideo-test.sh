@@ -9,8 +9,7 @@ for video in /Volumes/camera/communitycats/referenceVideos2/*.mp4; do
     echo "$video"
     ./cds detect --uri $video \
     --model-path $MODEL \
-    --rate-limit-fps 30 \
-    --queue-size 1 --imgsz 416 --confidence 0.8 --nms 0.75 --no-event-stdout
+    --queue-size 2 --imgsz 416 --confidence 0.8 --nms 0.75 --no-event-stdout
 done
 
 # Example:

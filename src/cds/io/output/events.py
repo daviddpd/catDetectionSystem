@@ -18,6 +18,9 @@ class JsonEventSink:
             self._file_path.parent.mkdir(parents=True, exist_ok=True)
             self._file_handle = self._file_path.open("a", encoding="utf-8")
 
+    def enabled(self) -> bool:
+        return self._stdout_enabled or self._file_path is not None
+
     def emit(self, event: dict[str, Any]) -> None:
         payload = json.dumps(event, ensure_ascii=True)
         with self._lock:

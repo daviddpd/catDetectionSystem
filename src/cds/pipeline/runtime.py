@@ -4,8 +4,9 @@ import logging
 import threading
 import time
 from copy import deepcopy
+from dataclasses import dataclass
 from dataclasses import asdict
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cds.config.models import RuntimeConfig
@@ -17,7 +18,22 @@ from cds.monitoring import PeriodicStatsLogger, RuntimeIdentity, RuntimeMetrics
 from cds.pipeline.annotate import draw_overlays
 from cds.pipeline.frame_queue import LatestFrameQueue
 from cds.triggers import TriggerManager
-from cds.types import FramePacket
+from cds.types import Detection, FramePacket
+
+
+@dataclass
+class _InferPacket:
+    packet: FramePacket
+    detections: list[Detection]
+
+
+@dataclass
+class _EventPacket:
+    timestamp: datetime
+    frame_id: int
+    source: str
+    backend_name: str
+    detections: list[Detection]
 
 
 class DetectionRuntime:
@@ -97,40 +113,15 @@ class DetectionRuntime:
         frame_queue: LatestFrameQueue[FramePacket] = LatestFrameQueue(
             maxsize=self._config.ingest.queue_size
         )
+        infer_queue: LatestFrameQueue[_InferPacket] = LatestFrameQueue(
+            maxsize=self._config.ingest.queue_size
+        )
         stop_event = threading.Event()
         ingest_eof = threading.Event()
+        infer_eof = threading.Event()
+        source_shape_logged = threading.Event()
 
         is_live_source = str(self._config.ingest.uri).startswith(("rtsp://", "http://", "https://"))
-
-        def ingest_loop() -> None:
-            none_count = 0
-            last_emit = time.monotonic()
-            while not stop_event.is_set():
-                packet = ingest.read_latest()
-                if packet is None:
-                    none_count += 1
-                    if not is_live_source and none_count >= 5:
-                        ingest_eof.set()
-                        return
-                    time.sleep(0.01)
-                    continue
-
-                none_count = 0
-                dropped = frame_queue.put_latest(packet)
-                metrics.mark_ingest()
-                metrics.set_queue_depth(frame_queue.qsize())
-                if dropped:
-                    metrics.add_dropped(dropped)
-
-                if self._config.ingest.rate_limit_fps:
-                    interval = 1.0 / max(0.1, self._config.ingest.rate_limit_fps)
-                    elapsed = time.monotonic() - last_emit
-                    if elapsed < interval:
-                        time.sleep(interval - elapsed)
-                    last_emit = time.monotonic()
-
-        ingest_thread = threading.Thread(target=ingest_loop, name="cds-ingest", daemon=True)
-        ingest_thread.start()
 
         display_sink = None
         remote_sink = None
@@ -149,9 +140,7 @@ class DetectionRuntime:
                 self._logger.info("remote sink enabled endpoint=%s", remote_sink.endpoint_url)
 
         event_sink = JsonEventSink(
-            stdout_enabled=(
-                self._config.monitoring.event_stdout and not self._config.output.headless
-            ),
+            stdout_enabled=self._config.monitoring.event_stdout,
             file_path=self._config.monitoring.event_file,
         )
         event_sink.open()
@@ -160,6 +149,172 @@ class DetectionRuntime:
         if self._config.output.headless:
             trigger_config.audio.enabled = False
         triggers = TriggerManager(trigger_config)
+
+        event_sink_enabled = event_sink.enabled()
+        triggers_enabled = triggers.enabled()
+        event_queue: LatestFrameQueue[_EventPacket] | None = None
+        if event_sink_enabled or triggers_enabled:
+            event_queue = LatestFrameQueue(maxsize=128)
+
+        model_path = model_spec.model_path or ""
+        if model_path:
+            model_format = Path(model_path).suffix.lower() or "unknown"
+        elif model_spec.cfg_path or model_spec.weights_path:
+            model_format = "darknet"
+        else:
+            model_format = "unknown"
+        self._logger.info(
+            "perf config model_path=%s model_format=%s imgsz=%d backend=%s device=%s ingest=%s queue_size=%d rate_limit_fps=%s display=%s remote_mjpeg=%s events=%s triggers=%s",
+            model_path,
+            model_format,
+            self._config.model.imgsz,
+            backend.name(),
+            backend.device_info(),
+            ingest.name(),
+            self._config.ingest.queue_size,
+            self._config.ingest.rate_limit_fps,
+            display_sink is not None,
+            remote_sink is not None,
+            event_sink_enabled,
+            triggers_enabled,
+        )
+
+        def ingest_loop() -> None:
+            none_count = 0
+            last_emit = time.monotonic()
+            while not stop_event.is_set():
+                packet = ingest.read_latest()
+                if packet is None:
+                    none_count += 1
+                    if not is_live_source and none_count >= 5:
+                        ingest_eof.set()
+                        return
+                    time.sleep(0.01)
+                    continue
+
+                if not source_shape_logged.is_set():
+                    try:
+                        height, width = packet.frame.shape[:2]
+                        self._logger.info(
+                            "source dimensions width=%d height=%d source=%s",
+                            width,
+                            height,
+                            packet.source,
+                        )
+                        source_shape_logged.set()
+                    except Exception:
+                        pass
+
+                none_count = 0
+                dropped = frame_queue.put_latest(packet)
+                metrics.mark_ingest()
+                metrics.set_queue_depth(frame_queue.qsize())
+                if dropped:
+                    metrics.add_dropped(dropped)
+
+                if self._config.ingest.rate_limit_fps:
+                    interval = 1.0 / max(0.1, self._config.ingest.rate_limit_fps)
+                    elapsed = time.monotonic() - last_emit
+                    if elapsed < interval:
+                        time.sleep(interval - elapsed)
+                    last_emit = time.monotonic()
+
+        def infer_loop() -> None:
+            while True:
+                if stop_event.is_set() and frame_queue.empty():
+                    infer_eof.set()
+                    return
+
+                packet = frame_queue.get(timeout=0.1)
+                metrics.set_queue_depth(frame_queue.qsize())
+                if packet is None:
+                    if ingest_eof.is_set() and frame_queue.empty():
+                        infer_eof.set()
+                        return
+                    continue
+
+                if self._config.stress_sleep_ms > 0:
+                    time.sleep(self._config.stress_sleep_ms / 1000.0)
+
+                detections = backend.infer(packet.frame)
+                metrics.mark_infer()
+
+                dropped = infer_queue.put_latest(
+                    _InferPacket(packet=packet, detections=detections)
+                )
+                if dropped:
+                    metrics.add_dropped(dropped)
+
+                if event_queue is not None:
+                    dropped_event = event_queue.put_latest(
+                        _EventPacket(
+                            timestamp=packet.timestamp,
+                            frame_id=packet.frame_id,
+                            source=packet.source,
+                            backend_name=backend.name(),
+                            detections=detections,
+                        )
+                    )
+                    if dropped_event:
+                        self._logger.debug(
+                            "event queue saturated dropped=%d frame_id=%d",
+                            dropped_event,
+                            packet.frame_id,
+                        )
+
+        def event_loop() -> None:
+            if event_queue is None:
+                return
+
+            while True:
+                if stop_event.is_set() and event_queue.empty():
+                    return
+
+                event_packet = event_queue.get(timeout=0.1)
+                if event_packet is None:
+                    if infer_eof.is_set() and event_queue.empty():
+                        return
+                    continue
+
+                if event_sink_enabled:
+                    timestamp = event_packet.timestamp.astimezone(timezone.utc).isoformat()
+                    for detection in event_packet.detections:
+                        event_sink.emit(
+                            {
+                                "ts": timestamp,
+                                "frame_id": event_packet.frame_id,
+                                "source": event_packet.source,
+                                "label": detection.label,
+                                "class_id": detection.class_id,
+                                "confidence": detection.confidence,
+                                "bbox": [
+                                    detection.x1,
+                                    detection.y1,
+                                    detection.x2,
+                                    detection.y2,
+                                ],
+                                "backend": event_packet.backend_name,
+                            }
+                        )
+
+                if triggers_enabled:
+                    triggers.process(
+                        FramePacket(
+                            frame_id=event_packet.frame_id,
+                            frame=None,
+                            source=event_packet.source,
+                            timestamp=event_packet.timestamp,
+                        ),
+                        event_packet.detections,
+                        event_packet.backend_name,
+                    )
+
+        ingest_thread = threading.Thread(target=ingest_loop, name="cds-ingest", daemon=True)
+        infer_thread = threading.Thread(target=infer_loop, name="cds-infer", daemon=True)
+        event_thread = threading.Thread(target=event_loop, name="cds-events", daemon=True)
+        ingest_thread.start()
+        infer_thread.start()
+        event_thread.start()
 
         stats_logger = PeriodicStatsLogger(
             metrics=metrics,
@@ -171,45 +326,21 @@ class DetectionRuntime:
         )
 
         try:
+            render_enabled = display_sink is not None or remote_sink is not None
             while not stop_event.is_set():
-                packet = frame_queue.get(timeout=0.1)
-                metrics.set_queue_depth(frame_queue.qsize())
-
-                if packet is None:
-                    if ingest_eof.is_set() and frame_queue.empty():
+                infer_packet = infer_queue.get(timeout=0.1)
+                if infer_packet is None:
+                    if infer_eof.is_set() and infer_queue.empty():
                         break
                     stats_logger.maybe_emit()
                     continue
 
-                if self._config.stress_sleep_ms > 0:
-                    time.sleep(self._config.stress_sleep_ms / 1000.0)
+                packet = infer_packet.packet
+                detections = infer_packet.detections
 
-                detections = backend.infer(packet.frame)
-                metrics.mark_infer()
-
-                snapshot = metrics.snapshot()
-                draw_overlays(packet.frame, detections, backend.name(), snapshot.fps_infer)
-
-                for detection in detections:
-                    event = {
-                        "ts": packet.timestamp.astimezone(timezone.utc).isoformat(),
-                        "frame_id": packet.frame_id,
-                        "source": packet.source,
-                        "label": detection.label,
-                        "class_id": detection.class_id,
-                        "confidence": detection.confidence,
-                        "bbox": [
-                            detection.x1,
-                            detection.y1,
-                            detection.x2,
-                            detection.y2,
-                        ],
-                        "backend": backend.name(),
-                    }
-                    if not self._config.output.headless:
-                        event_sink.emit(event)
-
-                triggers.process(packet, detections, backend.name())
+                if render_enabled:
+                    snapshot = metrics.snapshot()
+                    draw_overlays(packet.frame, detections, backend.name(), snapshot.fps_infer)
 
                 if display_sink is not None:
                     should_continue = display_sink.write(packet.frame)
@@ -226,6 +357,8 @@ class DetectionRuntime:
         finally:
             stop_event.set()
             ingest_thread.join(timeout=2)
+            infer_thread.join(timeout=2)
+            event_thread.join(timeout=2)
             ingest.close()
             triggers.close()
             event_sink.close()

@@ -10,8 +10,12 @@ from cds.types import Detection, FramePacket
 
 class TriggerManager:
     def __init__(self, config: TriggerConfig) -> None:
+        self._enabled = bool(config.audio.enabled or config.hooks.enabled)
         self._audio = AudioTrigger(config.audio)
         self._hooks = HookTrigger(config.hooks)
+
+    def enabled(self) -> bool:
+        return self._enabled
 
     def process(
         self,
@@ -19,6 +23,8 @@ class TriggerManager:
         detections: list[Detection],
         backend_name: str,
     ) -> None:
+        if not self._enabled:
+            return
         for detection in detections:
             self._audio.emit(detection.label)
             payload = {
