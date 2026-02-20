@@ -54,7 +54,21 @@ def _add_infer_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--remote-path", help="MJPEG URL path")
 
     parser.add_argument("--queue-size", type=int, choices=[1, 2], help="Frame queue size (latest-frame policy)")
-    parser.add_argument("--rate-limit-fps", type=float, help="Ingest frame rate cap")
+    parser.add_argument(
+        "--rate-limit-fps",
+        type=float,
+        help="Sampling target FPS before inference (does not sleep RTSP ingest reads)",
+    )
+    parser.add_argument(
+        "--clock",
+        choices=["auto", "source", "asfast"],
+        help="Input pacing policy: auto (live realtime, files encoded-rate), source, or asfast",
+    )
+    parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="File-only full-throttle mode: process every frame as fast as possible without dropping",
+    )
     parser.add_argument("--gstreamer-pipeline", help="Optional full GStreamer pipeline string")
     parser.add_argument(
         "--pyav-option",

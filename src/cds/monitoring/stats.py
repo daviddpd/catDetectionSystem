@@ -33,11 +33,14 @@ class PeriodicStatsLogger:
 
         snapshot = self._metrics.snapshot()
         self._logger.info(
-            "stats fps_in=%.2f fps_infer=%.2f dropped_frames=%d queue_depth=%d backend=%s decoder=%s",
+            "stats fps_decode=%.2f fps_in=%.2f fps_infer=%.2f sampled_frames=%d dropped_frames=%d queue_depth=%d frame_age_ms=%.1f backend=%s decoder=%s",
+            snapshot.fps_decode,
             snapshot.fps_in,
             snapshot.fps_infer,
+            snapshot.sampled_frames,
             snapshot.dropped_frames,
             snapshot.queue_depth,
+            snapshot.frame_age_ms,
             self._identity.backend,
             self._identity.decoder,
         )

@@ -91,6 +91,13 @@ def _coerce_bool(value: Any) -> bool:
     return bool(value)
 
 
+def _normalize_clock_mode(value: Any) -> str:
+    mode = str(value if value is not None else "auto").strip().lower()
+    if mode not in {"auto", "source", "asfast"}:
+        return "auto"
+    return mode
+
+
 def _resolve_repo_relative(path_value: str | None, repo_root: Path) -> str | None:
     if not path_value:
         return path_value
@@ -160,6 +167,8 @@ def _normalize(data: dict[str, Any], repo_root: Path) -> RuntimeConfig:
                 if ingest_data.get("rate_limit_fps")
                 else None
             ),
+            clock_mode=_normalize_clock_mode(ingest_data.get("clock_mode", "auto")),
+            benchmark=_coerce_bool(ingest_data.get("benchmark", False)),
             gstreamer_pipeline=ingest_data.get("gstreamer_pipeline"),
             pyav_options={
                 str(k): str(v) for k, v in ingest_data.get("pyav_options", {}).items()

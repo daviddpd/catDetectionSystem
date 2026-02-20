@@ -23,6 +23,8 @@ class OpenCVIngest(VideoIngest):
         self._entry_index = 0
         self._current_image_pending = False
         self._cap: cv2.VideoCapture | None = None
+        self._source_mode = "live-stream"
+        self._nominal_fps: float | None = None
 
     def open(self, uri: str, options: dict[str, Any] | None = None) -> None:
         self._uri = uri
@@ -32,9 +34,11 @@ class OpenCVIngest(VideoIngest):
         self._entry_index = 0
         self._current_image_pending = False
         self._release_capture()
+        self._nominal_fps = None
 
         path = Path(uri)
         if path.is_dir():
+            self._source_mode = "directory"
             self._entries = sorted(
                 [
                     p
@@ -45,10 +49,15 @@ class OpenCVIngest(VideoIngest):
             return
 
         if path.is_file():
+            if path.suffix.lower() in _IMAGE_EXTENSIONS:
+                self._source_mode = "image-file"
+            else:
+                self._source_mode = "video-file"
             self._entries = [path]
             return
 
         # Treat as stream URL (rtsp/http/etc.)
+        self._source_mode = "live-stream"
         self._cap = self._open_capture(uri)
 
     def _open_capture(self, uri: str) -> cv2.VideoCapture:
@@ -57,6 +66,11 @@ class OpenCVIngest(VideoIngest):
                 "rtsp_transport;tcp|reorder_queue_size;0|fflags;nobuffer"
             )
         cap = cv2.VideoCapture(uri, cv2.CAP_FFMPEG)
+        try:
+            fps = float(cap.get(cv2.CAP_PROP_FPS))
+            self._nominal_fps = fps if fps > 0 else None
+        except Exception:
+            self._nominal_fps = None
         return cap
 
     def _release_capture(self) -> None:
@@ -72,6 +86,7 @@ class OpenCVIngest(VideoIngest):
         entry = self._entries[self._entry_index]
         if entry.suffix.lower() in _IMAGE_EXTENSIONS:
             self._current_image_pending = True
+            self._nominal_fps = None
             return True
 
         self._cap = self._open_capture(str(entry))
@@ -144,3 +159,9 @@ class OpenCVIngest(VideoIngest):
 
     def name(self) -> str:
         return "opencv"
+
+    def source_mode(self) -> str:
+        return self._source_mode
+
+    def nominal_fps(self) -> float | None:
+        return self._nominal_fps

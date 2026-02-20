@@ -33,6 +33,27 @@ class ConfigLoaderTests(unittest.TestCase):
             self.assertFalse(config.output.remote_enabled)
             self.assertFalse(config.monitoring.event_stdout)
 
+    def test_ingest_clock_and_benchmark_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_file = root / "cds.json"
+            config_file.write_text(
+                """
+{
+  "ingest": {
+    "clock_mode": "source",
+    "benchmark": true
+  }
+}
+""".strip(),
+                encoding="utf-8",
+            )
+
+            config = load_runtime_config(repo_root=root, config_path=str(config_file))
+
+            self.assertEqual(config.ingest.clock_mode, "source")
+            self.assertTrue(config.ingest.benchmark)
+
 
 if __name__ == "__main__":
     unittest.main()

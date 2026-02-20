@@ -24,6 +24,8 @@ class PyAVIngest(VideoIngest):
         self._current_image_pending = False
         self._container = None
         self._frame_iter = None
+        self._source_mode = "live-stream"
+        self._nominal_fps: float | None = None
 
     def _require_av(self) -> Any:
         if self._av is not None:
@@ -50,9 +52,11 @@ class PyAVIngest(VideoIngest):
         self._entry_index = 0
         self._current_image_pending = False
         self._close_container()
+        self._nominal_fps = None
 
         path = Path(uri)
         if path.is_dir():
+            self._source_mode = "directory"
             self._entries = sorted(
                 [
                     p
@@ -63,11 +67,17 @@ class PyAVIngest(VideoIngest):
             return
 
         if path.is_file():
+            if path.suffix.lower() in _IMAGE_EXTENSIONS:
+                self._source_mode = "image-file"
+            else:
+                self._source_mode = "video-file"
             self._entries = [path]
             return
 
+        self._source_mode = "live-stream"
         av = self._require_av()
         self._container = av.open(uri, options=self._options)
+        self._nominal_fps = self._extract_stream_fps(self._container)
         self._frame_iter = self._container.decode(video=0)
 
     def _open_next_entry(self) -> bool:
@@ -78,10 +88,12 @@ class PyAVIngest(VideoIngest):
         entry = self._entries[self._entry_index]
         if entry.suffix.lower() in _IMAGE_EXTENSIONS:
             self._current_image_pending = True
+            self._nominal_fps = None
             return True
 
         av = self._require_av()
         self._container = av.open(str(entry), options=self._options)
+        self._nominal_fps = self._extract_stream_fps(self._container)
         self._frame_iter = self._container.decode(video=0)
         self._current_image_pending = False
         return True
@@ -91,6 +103,25 @@ class PyAVIngest(VideoIngest):
             self._container.close()
             self._container = None
             self._frame_iter = None
+            self._nominal_fps = None
+
+    def _extract_stream_fps(self, container: Any) -> float | None:
+        try:
+            stream = container.streams.video[0]
+        except Exception:
+            return None
+
+        for attr in ("average_rate", "base_rate", "guessed_rate"):
+            value = getattr(stream, attr, None)
+            if not value:
+                continue
+            try:
+                fps = float(value)
+            except Exception:
+                continue
+            if fps > 0:
+                return fps
+        return None
 
     def _read_from_entries(self) -> FramePacket | None:
         while True:
@@ -162,3 +193,9 @@ class PyAVIngest(VideoIngest):
 
     def name(self) -> str:
         return "pyav"
+
+    def source_mode(self) -> str:
+        return self._source_mode
+
+    def nominal_fps(self) -> float | None:
+        return self._nominal_fps

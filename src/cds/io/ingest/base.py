@@ -22,3 +22,11 @@ class VideoIngest(ABC):
     @abstractmethod
     def name(self) -> str:
         """Stable backend name."""
+
+    def source_mode(self) -> str:
+        """Source mode: live-stream, video-file, image-file, or directory."""
+        return "live-stream"
+
+    def nominal_fps(self) -> float | None:
+        """Best-effort source FPS if available."""
+        return None

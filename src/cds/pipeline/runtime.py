@@ -20,6 +20,15 @@ from cds.pipeline.frame_queue import LatestFrameQueue
 from cds.triggers import TriggerManager
 from cds.types import Detection, FramePacket
 
+_VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm"}
+
+
+def _is_video_source(source: str) -> bool:
+    try:
+        return Path(source).suffix.lower() in _VIDEO_EXTENSIONS
+    except Exception:
+        return False
+
 
 @dataclass
 class _InferPacket:
@@ -110,18 +119,52 @@ class DetectionRuntime:
                     "prometheus requested but prometheus_client is not installed"
                 )
 
+        source_mode = ingest.source_mode()
+        is_live_source = source_mode == "live-stream"
+        is_file_like_source = source_mode in {"video-file", "directory"}
+
+        benchmark_requested = bool(self._config.ingest.benchmark)
+        benchmark_active = benchmark_requested and is_file_like_source
+        if benchmark_requested and not is_file_like_source:
+            self._logger.warning(
+                "benchmark mode requested but source_mode=%s is not file-like; ignoring benchmark",
+                source_mode,
+            )
+
+        clock_mode_requested = self._config.ingest.clock_mode
+        if benchmark_active:
+            clock_mode_effective = "asfast"
+        elif clock_mode_requested == "auto":
+            clock_mode_effective = "asfast" if is_live_source else "source"
+        else:
+            clock_mode_effective = clock_mode_requested
+
+        source_clock_enabled = (
+            clock_mode_effective == "source" and is_file_like_source and not benchmark_active
+        )
+        sample_interval = (
+            (1.0 / max(0.1, self._config.ingest.rate_limit_fps))
+            if self._config.ingest.rate_limit_fps and not benchmark_active
+            else None
+        )
+        if benchmark_active and self._config.ingest.rate_limit_fps:
+            self._logger.warning(
+                "benchmark mode ignores rate_limit_fps=%s",
+                self._config.ingest.rate_limit_fps,
+            )
+
         frame_queue: LatestFrameQueue[FramePacket] = LatestFrameQueue(
-            maxsize=self._config.ingest.queue_size
+            maxsize=self._config.ingest.queue_size,
+            drop_oldest=not benchmark_active,
         )
         infer_queue: LatestFrameQueue[_InferPacket] = LatestFrameQueue(
-            maxsize=self._config.ingest.queue_size
+            maxsize=self._config.ingest.queue_size,
+            drop_oldest=not benchmark_active,
         )
         stop_event = threading.Event()
         ingest_eof = threading.Event()
         infer_eof = threading.Event()
         source_shape_logged = threading.Event()
-
-        is_live_source = str(self._config.ingest.uri).startswith(("rtsp://", "http://", "https://"))
 
         display_sink = None
         remote_sink = None
@@ -164,24 +207,45 @@ class DetectionRuntime:
         else:
             model_format = "unknown"
         self._logger.info(
-            "perf config model_path=%s model_format=%s imgsz=%d backend=%s device=%s ingest=%s queue_size=%d rate_limit_fps=%s display=%s remote_mjpeg=%s events=%s triggers=%s",
+            "perf config model_path=%s model_format=%s imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s remote_mjpeg=%s events=%s triggers=%s",
             model_path,
             model_format,
             self._config.model.imgsz,
             backend.name(),
             backend.device_info(),
             ingest.name(),
+            source_mode,
+            clock_mode_effective,
+            benchmark_active,
             self._config.ingest.queue_size,
+            ("no-drop" if benchmark_active else "latest-wins"),
             self._config.ingest.rate_limit_fps,
+            sample_interval,
             display_sink is not None,
             remote_sink is not None,
             event_sink_enabled,
             triggers_enabled,
         )
 
+        def _enqueue_with_policy(queue_obj: LatestFrameQueue, item: object) -> int:
+            if not benchmark_active:
+                return queue_obj.put_latest(item)
+
+            while not stop_event.is_set():
+                result = queue_obj.put_latest(item, block=True, timeout=0.1)
+                if result == 0:
+                    return 0
+            return 1
+
         def ingest_loop() -> None:
             none_count = 0
-            last_emit = time.monotonic()
+            last_sample_emit = 0.0
+            source_clock_warned = False
+            source_clock_started = False
+            source_clock_source = ""
+            source_clock_fps = 0.0
+            source_clock_start = 0.0
+            source_clock_frames = 0
             while not stop_event.is_set():
                 packet = ingest.read_latest()
                 if packet is None:
@@ -206,18 +270,59 @@ class DetectionRuntime:
                         pass
 
                 none_count = 0
-                dropped = frame_queue.put_latest(packet)
+                metrics.mark_decode()
+
+                now = time.monotonic()
+                if source_clock_enabled and _is_video_source(packet.source):
+                    nominal_fps = ingest.nominal_fps()
+                    if not nominal_fps or nominal_fps <= 0:
+                        nominal_fps = 30.0
+                        if not source_clock_warned:
+                            source_clock_warned = True
+                            self._logger.warning(
+                                "source clock requested but source FPS unavailable; defaulting to %.1f",
+                                nominal_fps,
+                            )
+
+                    if (
+                        not source_clock_started
+                        or packet.source != source_clock_source
+                        or abs(nominal_fps - source_clock_fps) > 0.01
+                    ):
+                        source_clock_started = True
+                        source_clock_source = packet.source
+                        source_clock_fps = nominal_fps
+                        source_clock_start = now
+                        source_clock_frames = 0
+                        self._logger.info(
+                            "source clock active fps=%.3f source=%s",
+                            source_clock_fps,
+                            source_clock_source,
+                        )
+
+                    target_time = source_clock_start + (source_clock_frames / source_clock_fps)
+                    if now < target_time:
+                        time.sleep(target_time - now)
+                        now = time.monotonic()
+                    source_clock_frames += 1
+                elif source_clock_started and packet.source != source_clock_source:
+                    source_clock_started = False
+                    source_clock_source = ""
+                    source_clock_frames = 0
+
+                if sample_interval is not None:
+                    if (now - last_sample_emit) < sample_interval:
+                        metrics.add_sampled_out(1)
+                        continue
+                    last_sample_emit = now
+
+                dropped = _enqueue_with_policy(frame_queue, packet)
+                if stop_event.is_set():
+                    return
                 metrics.mark_ingest()
                 metrics.set_queue_depth(frame_queue.qsize())
                 if dropped:
                     metrics.add_dropped(dropped)
-
-                if self._config.ingest.rate_limit_fps:
-                    interval = 1.0 / max(0.1, self._config.ingest.rate_limit_fps)
-                    elapsed = time.monotonic() - last_emit
-                    if elapsed < interval:
-                        time.sleep(interval - elapsed)
-                    last_emit = time.monotonic()
 
         def infer_loop() -> None:
             while True:
@@ -239,9 +344,13 @@ class DetectionRuntime:
                 detections = backend.infer(packet.frame)
                 metrics.mark_infer()
 
-                dropped = infer_queue.put_latest(
-                    _InferPacket(packet=packet, detections=detections)
+                dropped = _enqueue_with_policy(
+                    infer_queue,
+                    _InferPacket(packet=packet, detections=detections),
                 )
+                if stop_event.is_set():
+                    infer_eof.set()
+                    return
                 if dropped:
                     metrics.add_dropped(dropped)
 
@@ -337,6 +446,12 @@ class DetectionRuntime:
 
                 packet = infer_packet.packet
                 detections = infer_packet.detections
+
+                frame_age_ms = max(
+                    0.0,
+                    (datetime.now() - packet.timestamp).total_seconds() * 1000.0,
+                )
+                metrics.set_frame_age_ms(frame_age_ms)
 
                 if render_enabled:
                     snapshot = metrics.snapshot()

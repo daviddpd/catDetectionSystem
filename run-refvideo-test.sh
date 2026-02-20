@@ -5,11 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODEL="artifacts/models/communitycats-prod-20260217-213759/exports/best.mlpackage"
 #MODEL="yolov8s.pt"
 
-for video in /Volumes/camera/communitycats/referenceVideos2/*.mp4; do
+for video in /Volumes/camera/communitycats/referenceVideos/*.mp4; do
     echo "$video"
     ./cds detect --uri $video \
     --model-path $MODEL \
-    --queue-size 2 --imgsz 416 --confidence 0.8 --nms 0.75 --no-event-stdout
+    --imgsz 416 --confidence 0.5 --nms 0.6 \
+    --log-level DEBUG  --benchmark 
 done
 
 # Example:

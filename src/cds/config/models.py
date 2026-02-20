@@ -31,6 +31,8 @@ class IngestConfig:
     backend: str = "auto"
     queue_size: int = 2
     rate_limit_fps: float | None = None
+    clock_mode: str = "auto"
+    benchmark: bool = False
     gstreamer_pipeline: str | None = None
     pyav_options: dict[str, str] = field(default_factory=dict)
 
@@ -102,6 +104,8 @@ class RuntimeConfig:
             "model": self.model.name,
             "backend_requested": self.backend_policy.requested,
             "ingest_backend": self.ingest.backend,
+            "ingest_clock": self.ingest.clock_mode,
+            "benchmark": self.ingest.benchmark,
             "headless": self.output.headless,
             "remote_enabled": self.output.remote_enabled,
             "json_logs": self.monitoring.json_logs,

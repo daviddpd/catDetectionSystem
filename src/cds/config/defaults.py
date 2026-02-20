@@ -24,6 +24,8 @@ DEFAULT_CONFIG: dict = {
         "backend": "auto",
         "queue_size": 2,
         "rate_limit_fps": None,
+        "clock_mode": "auto",
+        "benchmark": False,
         "gstreamer_pipeline": None,
         "pyav_options": {
             "rtsp_transport": "tcp",

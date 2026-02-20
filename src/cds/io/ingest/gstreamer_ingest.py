@@ -23,6 +23,8 @@ class GStreamerIngest(OpenCVIngest):
             self._entries = []
             self._entry_index = 0
             self._current_image_pending = False
+            self._source_mode = "live-stream"
+            self._nominal_fps = None
             self._release_capture()
             self._cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
             return

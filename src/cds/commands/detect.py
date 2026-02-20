@@ -56,6 +56,8 @@ def build_detect_overrides(args: Any) -> dict[str, Any]:
             "backend": args.ingest_backend,
             "queue_size": args.queue_size,
             "rate_limit_fps": args.rate_limit_fps,
+            "clock_mode": args.clock,
+            "benchmark": (True if args.benchmark else None),
             "gstreamer_pipeline": args.gstreamer_pipeline,
             "pyav_options": pyav_options,
         },
