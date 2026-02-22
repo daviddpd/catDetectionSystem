@@ -22,11 +22,17 @@ def draw_overlays(
 ) -> None:
     import cv2
 
-    top_y = 36
+
+    # 1200 x 100, 1175, 88, 12, 36
+
+    reference_x = 12
+    reference_y = 36
+    status_text_x = 1300
+    status_text_y = 36
     cv2.putText(
         frame,
         f"backend={backend} fps={fps_infer:.2f}",
-        (12, top_y),
+        (status_text_x, status_text_y),
         cv2.FONT_HERSHEY_SIMPLEX,
         1.2,
         (255, 255, 255),
