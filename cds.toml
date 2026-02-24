@@ -39,8 +39,8 @@ remote_port = 8080
 remote_path = "/stream.mjpg"
 
 [triggers.audio]
-enabled = true
-cooldown_seconds = 15.0
+enabled = false
+cooldown_seconds = 60.0
 
 [triggers.audio.class_to_audio]
 cat = "assests/Meow-cat-sound-effect.mp3"
@@ -57,7 +57,7 @@ max_workers = 4
 classes = ["cat"]
 command = ["/usr/local/bin/cds-hook", "cat"]
 timeout_seconds = 5.0
-cooldown_seconds = 10.0
+cooldown_seconds = 60.0
 payload_mode = "stdin"
 
 [monitoring]
