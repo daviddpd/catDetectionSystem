@@ -7,6 +7,8 @@ cfg_path = "/abs/path/to/yolov-tiny-custom-416v6-64.cfg"
 weights_path = "/abs/path/to/yolov-tiny-custom-416v6-64_final.weights"
 labels_path = "yolo/cfg/custom-names-v4.txt"
 confidence = 0.5
+# default: unset (used only for --benchmark frame export band logic; must be > confidence)
+confidence_min = ""
 nms = 0.5
 imgsz = 640
 class_filter = ["cat", "cat-domino", "raccoon", "opossum", "skunk"]
@@ -21,7 +23,12 @@ allow_tensorrt = true
 uri = "rtsp://user:pass@camera/stream"
 backend = "auto"
 queue_size = 2
+# Sampling target FPS before inference (default: disabled / unset)
 rate_limit_fps = 0.0
+# default: "auto" (live=asfast drain, files=source paced, benchmark forces asfast)
+clock_mode = "auto"
+# default: false (file/directory sources only; process every frame, no-drop queues)
+benchmark = false
 gstreamer_pipeline = ""
 
 [ingest.pyav_options]
@@ -33,14 +40,38 @@ max_delay = "500000"
 [output]
 headless = false
 window_name = "catDetectionSystem"
+# default: true (secondary snapshot gallery window)
+detections_window_enabled = true
+# default: "cds-detections"
+detections_window_name = "cds-detections"
+# default: 6 snapshots shown per page
+detections_window_slots = 6
+# default: 0.5 (gallery tile scale)
+detections_window_scale = 0.5
+# default: 0 => derived as max(frames_detect_on)*3
+detections_buffer_frames = 0
 remote_enabled = false
 remote_host = "0.0.0.0"
 remote_port = 8080
 remote_path = "/stream.mjpg"
+# default: false (benchmark mode only)
+export_frames = false
+# default: unset (required when export_frames=true)
+export_frames_dir = ""
+# default: 10.0 percent random sampling within confidence band
+export_frames_sample_percent = 10.0
 
 [triggers.audio]
 enabled = true
 cooldown_seconds = 15.0
+# default: 10 consecutive inferred frames to latch ON
+frames_detect_on = 10
+# default: unset => 50% of frames_detect_on (minimum 1) to latch OFF
+frames_detect_off = ""
+# default: 0 disables area gate (pixels)
+min_area_pixels = 0
+# default: 0.0 disables area gate (percent of full frame area)
+min_area_percent = 0.0
 
 [triggers.audio.class_to_audio]
 cat = "assests/Meow-cat-sound-effect.mp3"
@@ -52,6 +83,14 @@ cat = "assests/Meow-cat-sound-effect.mp3"
 enabled = false
 allowlist = ["/usr/local/bin/cds-hook"]
 max_workers = 4
+# default: 10 consecutive inferred frames to latch ON
+frames_detect_on = 10
+# default: unset => 50% of frames_detect_on (minimum 1) to latch OFF
+frames_detect_off = ""
+# default: 0 disables area gate (pixels)
+min_area_pixels = 0
+# default: 0.0 disables area gate (percent of full frame area)
+min_area_percent = 0.0
 
 [[triggers.hooks.rules]]
 classes = ["cat"]
