@@ -98,6 +98,14 @@ def _normalize_clock_mode(value: Any) -> str:
     return mode
 
 
+def _none_if_empty(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
 def _resolve_repo_relative(path_value: str | None, repo_root: Path) -> str | None:
     if not path_value:
         return path_value
@@ -146,6 +154,11 @@ def _normalize(data: dict[str, Any], repo_root: Path) -> RuntimeConfig:
             )
             or str((repo_root / "yolo/cfg/custom-names-v4.txt").resolve()),
             confidence=float(model_data.get("confidence", 0.5)),
+            confidence_min=(
+                float(model_data["confidence_min"])
+                if _none_if_empty(model_data.get("confidence_min")) is not None
+                else None
+            ),
             nms=float(model_data.get("nms", 0.5)),
             imgsz=int(model_data.get("imgsz", 640)),
             class_filter=[str(v) for v in model_data.get("class_filter", [])],
@@ -177,22 +190,61 @@ def _normalize(data: dict[str, Any], repo_root: Path) -> RuntimeConfig:
         output=OutputConfig(
             headless=_coerce_bool(output_data.get("headless", False)),
             window_name=str(output_data.get("window_name", "catDetectionSystem")),
+            detections_window_enabled=_coerce_bool(
+                output_data.get("detections_window_enabled", True)
+            ),
+            detections_window_name=str(
+                output_data.get("detections_window_name", "cds-detections")
+            ),
+            detections_window_slots=max(
+                1, int(output_data.get("detections_window_slots", 6))
+            ),
+            detections_window_scale=max(
+                0.1, float(output_data.get("detections_window_scale", 0.5))
+            ),
+            detections_buffer_frames=max(
+                0, int(output_data.get("detections_buffer_frames", 0))
+            ),
             remote_enabled=_coerce_bool(output_data.get("remote_enabled", False)),
             remote_host=str(output_data.get("remote_host", "0.0.0.0")),
             remote_port=int(output_data.get("remote_port", 8080)),
             remote_path=str(output_data.get("remote_path", "/stream.mjpg")),
+            export_frames=_coerce_bool(output_data.get("export_frames", False)),
+            export_frames_dir=_resolve_repo_relative(
+                _none_if_empty(output_data.get("export_frames_dir")),
+                repo_root,
+            ),
+            export_frames_sample_percent=max(
+                0.0, min(100.0, float(output_data.get("export_frames_sample_percent", 10.0)))
+            ),
         ),
         triggers=TriggerConfig(
             audio=AudioTriggerConfig(
                 enabled=_coerce_bool(audio_data.get("enabled", True)),
                 class_to_audio=audio_map,
                 cooldown_seconds=float(audio_data.get("cooldown_seconds", 15.0)),
+                frames_detect_on=max(1, int(audio_data.get("frames_detect_on", 10))),
+                frames_detect_off=(
+                    max(1, int(audio_data["frames_detect_off"]))
+                    if _none_if_empty(audio_data.get("frames_detect_off")) is not None
+                    else None
+                ),
+                min_area_pixels=max(0, int(audio_data.get("min_area_pixels", 0))),
+                min_area_percent=max(0.0, float(audio_data.get("min_area_percent", 0.0))),
             ),
             hooks=HookTriggerConfig(
                 enabled=_coerce_bool(hook_data.get("enabled", False)),
                 allowlist=[str(v) for v in hook_data.get("allowlist", [])],
                 rules=hook_rules,
                 max_workers=max(1, int(hook_data.get("max_workers", 4))),
+                frames_detect_on=max(1, int(hook_data.get("frames_detect_on", 10))),
+                frames_detect_off=(
+                    max(1, int(hook_data["frames_detect_off"]))
+                    if _none_if_empty(hook_data.get("frames_detect_off")) is not None
+                    else None
+                ),
+                min_area_pixels=max(0, int(hook_data.get("min_area_pixels", 0))),
+                min_area_percent=max(0.0, float(hook_data.get("min_area_percent", 0.0))),
             ),
         ),
         monitoring=MonitoringConfig(

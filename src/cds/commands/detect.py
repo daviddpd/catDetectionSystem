@@ -44,6 +44,7 @@ def build_detect_overrides(args: Any) -> dict[str, Any]:
             "weights_path": args.weights_path,
             "labels_path": args.labels_path,
             "confidence": args.confidence,
+            "confidence_min": args.confidence_min,
             "nms": args.nms,
             "imgsz": args.imgsz,
             "class_filter": args.class_filter,
@@ -64,6 +65,9 @@ def build_detect_overrides(args: Any) -> dict[str, Any]:
         "output": {
             "headless": args.headless,
             "window_name": args.window_name,
+            "export_frames": (True if args.export_frames else None),
+            "export_frames_dir": args.export_frames_dir,
+            "export_frames_sample_percent": args.export_frames_sample_pct,
             "remote_enabled": args.remote_mjpeg,
             "remote_host": args.remote_host,
             "remote_port": args.remote_port,

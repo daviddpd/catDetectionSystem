@@ -42,6 +42,7 @@ def draw_overlays(
 
     for detection in detections:
         color = _color_for_label(detection.label)
+        area_percent = float(detection.extra.get("area_percent", 0.0))
         cv2.rectangle(
             frame,
             (detection.x1, detection.y1),
@@ -49,7 +50,10 @@ def draw_overlays(
             color,
             3,
         )
-        label = f"{detection.label} {detection.confidence:.2f}"
+        if area_percent > 0:
+            label = f"{detection.label} {detection.confidence:.2f} {area_percent:.2f}%"
+        else:
+            label = f"{detection.label} {detection.confidence:.2f}"
         cv2.putText(
             frame,
             label,

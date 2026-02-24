@@ -12,6 +12,7 @@ class ModelConfig:
     weights_path: str | None = None
     labels_path: str = "yolo/cfg/custom-names-v4.txt"
     confidence: float = 0.5
+    confidence_min: float | None = None
     nms: float = 0.5
     imgsz: int = 640
     class_filter: list[str] = field(default_factory=list)
@@ -41,10 +42,18 @@ class IngestConfig:
 class OutputConfig:
     headless: bool = False
     window_name: str = "catDetectionSystem"
+    detections_window_enabled: bool = True
+    detections_window_name: str = "cds-detections"
+    detections_window_slots: int = 6
+    detections_window_scale: float = 0.5
+    detections_buffer_frames: int = 0
     remote_enabled: bool = False
     remote_host: str = "0.0.0.0"
     remote_port: int = 8080
     remote_path: str = "/stream.mjpg"
+    export_frames: bool = False
+    export_frames_dir: str | None = None
+    export_frames_sample_percent: float = 10.0
 
 
 @dataclass
@@ -52,6 +61,10 @@ class AudioTriggerConfig:
     enabled: bool = True
     class_to_audio: dict[str, str] = field(default_factory=dict)
     cooldown_seconds: float = 15.0
+    frames_detect_on: int = 10
+    frames_detect_off: int | None = None
+    min_area_pixels: int = 0
+    min_area_percent: float = 0.0
 
 
 @dataclass
@@ -69,6 +82,10 @@ class HookTriggerConfig:
     allowlist: list[str] = field(default_factory=list)
     rules: list[HookRuleConfig] = field(default_factory=list)
     max_workers: int = 4
+    frames_detect_on: int = 10
+    frames_detect_off: int | None = None
+    min_area_pixels: int = 0
+    min_area_percent: float = 0.0
 
 
 @dataclass
@@ -106,6 +123,7 @@ class RuntimeConfig:
             "ingest_backend": self.ingest.backend,
             "ingest_clock": self.ingest.clock_mode,
             "benchmark": self.ingest.benchmark,
+            "export_frames": self.output.export_frames,
             "headless": self.output.headless,
             "remote_enabled": self.output.remote_enabled,
             "json_logs": self.monitoring.json_logs,

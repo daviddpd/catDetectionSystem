@@ -13,9 +13,10 @@ from cds.config.models import RuntimeConfig
 from cds.detector import select_backend
 from cds.detector.models import ModelSpec
 from cds.io.ingest import probe_decoder_path, select_ingest_backend
-from cds.io.output import DisplaySink, JsonEventSink, MjpegSink
+from cds.io.output import DetectionsGallerySink, DisplaySink, JsonEventSink, MjpegSink
 from cds.monitoring import PeriodicStatsLogger, RuntimeIdentity, RuntimeMetrics
 from cds.pipeline.annotate import draw_overlays
+from cds.pipeline.detection_capture import DetectionCaptureManager
 from cds.pipeline.frame_queue import LatestFrameQueue
 from cds.triggers import TriggerManager
 from cds.types import Detection, FramePacket
@@ -28,6 +29,18 @@ def _is_video_source(source: str) -> bool:
         return Path(source).suffix.lower() in _VIDEO_EXTENSIONS
     except Exception:
         return False
+
+
+def _attach_detection_area_metrics(frame, detections: list[Detection]) -> None:
+    try:
+        height, width = frame.shape[:2]
+        frame_area = max(1, int(height) * int(width))
+    except Exception:
+        frame_area = 1
+    for det in detections:
+        area_pixels = max(0, det.width * det.height)
+        det.extra["area_pixels"] = int(area_pixels)
+        det.extra["area_percent"] = float((100.0 * area_pixels) / frame_area)
 
 
 @dataclass
@@ -195,8 +208,50 @@ class DetectionRuntime:
 
         event_sink_enabled = event_sink.enabled()
         triggers_enabled = triggers.enabled()
+        detections_window_enabled = (
+            (not self._config.output.headless)
+            and bool(self._config.output.detections_window_enabled)
+        )
+
+        default_detect_on = max(
+            1,
+            int(trigger_config.audio.frames_detect_on if trigger_config.audio.enabled else 1),
+            int(trigger_config.hooks.frames_detect_on if trigger_config.hooks.enabled else 1),
+        )
+        capture_buffer_frames = int(self._config.output.detections_buffer_frames or 0)
+        if capture_buffer_frames <= 0:
+            capture_buffer_frames = max(1, default_detect_on * 3)
+
+        export_frames_requested = bool(self._config.output.export_frames)
+        export_frames_active = bool(export_frames_requested and benchmark_active)
+        if export_frames_requested and not benchmark_active:
+            self._logger.warning(
+                "export_frames requested but requires --benchmark on file/directory sources; disabling"
+            )
+
+        capture_manager: DetectionCaptureManager | None = None
+        if detections_window_enabled or export_frames_active:
+            capture_manager = DetectionCaptureManager(
+                buffer_frames=capture_buffer_frames,
+                export_enabled=export_frames_active,
+                export_dir=self._config.output.export_frames_dir,
+                export_sample_percent=self._config.output.export_frames_sample_percent,
+                confidence_low=self._config.model.confidence,
+                confidence_min=self._config.model.confidence_min,
+            )
+            capture_manager.start()
+
+        detections_gallery = None
+        if capture_manager is not None and detections_window_enabled:
+            detections_gallery = DetectionsGallerySink(
+                window_name=self._config.output.detections_window_name,
+                slots=self._config.output.detections_window_slots,
+                scale=self._config.output.detections_window_scale,
+            )
+            detections_gallery.open()
+
         event_queue: LatestFrameQueue[_EventPacket] | None = None
-        if event_sink_enabled or triggers_enabled:
+        if event_sink_enabled:
             event_queue = LatestFrameQueue(maxsize=128)
 
         model_path = model_spec.model_path or ""
@@ -207,7 +262,7 @@ class DetectionRuntime:
         else:
             model_format = "unknown"
         self._logger.info(
-            "perf config model_path=%s model_format=%s imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s remote_mjpeg=%s events=%s triggers=%s",
+            "perf config model_path=%s model_format=%s imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s",
             model_path,
             model_format,
             self._config.model.imgsz,
@@ -222,10 +277,15 @@ class DetectionRuntime:
             self._config.ingest.rate_limit_fps,
             sample_interval,
             display_sink is not None,
+            detections_gallery is not None,
+            capture_buffer_frames,
+            export_frames_active,
             remote_sink is not None,
             event_sink_enabled,
             triggers_enabled,
         )
+
+        snapshot_episode_active = False
 
         def _enqueue_with_policy(queue_obj: LatestFrameQueue, item: object) -> int:
             if not benchmark_active:
@@ -325,6 +385,7 @@ class DetectionRuntime:
                     metrics.add_dropped(dropped)
 
         def infer_loop() -> None:
+            nonlocal snapshot_episode_active
             while True:
                 if stop_event.is_set() and frame_queue.empty():
                     infer_eof.set()
@@ -342,7 +403,28 @@ class DetectionRuntime:
                     time.sleep(self._config.stress_sleep_ms / 1000.0)
 
                 detections = backend.infer(packet.frame)
+                _attach_detection_area_metrics(packet.frame, detections)
                 metrics.mark_infer()
+
+                trigger_result = triggers.process(packet, detections, backend.name())
+                if capture_manager is not None:
+                    if trigger_result.activated_detections and not snapshot_episode_active:
+                        capture_manager.submit_activation_snapshot(
+                            packet=packet,
+                            frame=packet.frame,
+                            detections=detections,
+                            activated_detections=trigger_result.activated_detections,
+                        )
+                        snapshot_episode_active = True
+                    if not trigger_result.any_active:
+                        snapshot_episode_active = False
+
+                    if export_frames_active and capture_manager.export_enabled():
+                        capture_manager.observe_benchmark_export(
+                            packet=packet,
+                            frame=packet.frame,
+                            detections=detections,
+                        )
 
                 dropped = _enqueue_with_policy(
                     infer_queue,
@@ -396,6 +478,8 @@ class DetectionRuntime:
                                 "label": detection.label,
                                 "class_id": detection.class_id,
                                 "confidence": detection.confidence,
+                                "area_pixels": int(detection.extra.get("area_pixels", detection.width * detection.height)),
+                                "area_percent": float(detection.extra.get("area_percent", 0.0)),
                                 "bbox": [
                                     detection.x1,
                                     detection.y1,
@@ -405,18 +489,6 @@ class DetectionRuntime:
                                 "backend": event_packet.backend_name,
                             }
                         )
-
-                if triggers_enabled:
-                    triggers.process(
-                        FramePacket(
-                            frame_id=event_packet.frame_id,
-                            frame=None,
-                            source=event_packet.source,
-                            timestamp=event_packet.timestamp,
-                        ),
-                        event_packet.detections,
-                        event_packet.backend_name,
-                    )
 
         ingest_thread = threading.Thread(target=ingest_loop, name="cds-ingest", daemon=True)
         infer_thread = threading.Thread(target=infer_loop, name="cds-infer", daemon=True)
@@ -457,11 +529,19 @@ class DetectionRuntime:
                     snapshot = metrics.snapshot()
                     draw_overlays(packet.frame, detections, backend.name(), snapshot.fps_infer)
 
+                last_display_key = -1
                 if display_sink is not None:
                     should_continue = display_sink.write(packet.frame)
+                    last_display_key = display_sink.consume_key()
                     if not should_continue:
                         stop_event.set()
                         break
+
+                if detections_gallery is not None and capture_manager is not None:
+                    detections_gallery.render(
+                        snapshots=capture_manager.list_snapshots(),
+                        key=last_display_key,
+                    )
 
                 if remote_sink is not None:
                     remote_sink.write(packet.frame)
@@ -477,6 +557,10 @@ class DetectionRuntime:
             ingest.close()
             triggers.close()
             event_sink.close()
+            if detections_gallery is not None:
+                detections_gallery.close()
+            if capture_manager is not None:
+                capture_manager.close()
             if remote_sink is not None:
                 remote_sink.close()
             if display_sink is not None:

@@ -37,6 +37,11 @@ def _add_infer_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--weights-path", help="Darknet weights path for OpenCV fallback")
     parser.add_argument("--labels-path", help="Label file path")
     parser.add_argument("--confidence", type=float, help="Confidence threshold")
+    parser.add_argument(
+        "--confidence-min",
+        type=float,
+        help="Higher confidence threshold used by benchmark frame export boundary logic",
+    )
     parser.add_argument("--nms", type=float, help="NMS threshold")
     parser.add_argument("--imgsz", type=int, help="Inference image size")
     parser.add_argument(
@@ -52,6 +57,20 @@ def _add_infer_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--remote-host", help="MJPEG listen host")
     parser.add_argument("--remote-port", type=int, help="MJPEG listen port")
     parser.add_argument("--remote-path", help="MJPEG URL path")
+    parser.add_argument(
+        "--export-frames",
+        action="store_true",
+        help="Benchmark mode only: export low-confidence candidate frames + VOC XML",
+    )
+    parser.add_argument(
+        "--export-frames-dir",
+        help="Directory for benchmark frame exports (JPEG + VOC XML)",
+    )
+    parser.add_argument(
+        "--export-frames-sample-pct",
+        type=float,
+        help="Random sample percentage for in-band benchmark frame export (default 10)",
+    )
 
     parser.add_argument("--queue-size", type=int, choices=[1, 2], help="Frame queue size (latest-frame policy)")
     parser.add_argument(

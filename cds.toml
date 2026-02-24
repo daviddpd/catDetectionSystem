@@ -39,8 +39,9 @@ remote_port = 8080
 remote_path = "/stream.mjpg"
 
 [triggers.audio]
-enabled = false
+enabled = true
 cooldown_seconds = 60.0
+frames_detect_on = 10
 
 [triggers.audio.class_to_audio]
 cat = "assests/Meow-cat-sound-effect.mp3"
@@ -51,6 +52,7 @@ cat = "assests/Meow-cat-sound-effect.mp3"
 [triggers.hooks]
 enabled = false
 allowlist = ["/usr/local/bin/cds-hook"]
+frames_detect_on = 10
 max_workers = 4
 
 [[triggers.hooks.rules]]
