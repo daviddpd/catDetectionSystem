@@ -17,6 +17,14 @@ python-simplexml
 ffmpeg-python
 
 # Optional host-specific conversion extras:
+
 coremltools      # macOS CoreML export hosts
 # tensorrt         # NVIDIA TensorRT export hosts
+
+# On RockChip, constraint the onnx version
+# save some time and contraint ultralytics too.
+
 # rknn-toolkit2    # Rockchip conversion hosts
+# rknn-toolkit-lite2
+# onnx==1.16.1
+# ultralytics=8.4.18

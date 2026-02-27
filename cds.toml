@@ -45,18 +45,27 @@ frames_detect_on = 2
 
 [triggers.audio.class_to_audio]
 cat = "assests/Meow-cat-sound-effect.mp3"
-"cat-domino" = "assests/Meow-cat-sound-effect.mp3"
-"cat-olive" = "assests/Meow-cat-sound-effect.mp3"
-"cat-bean" = "assests/Meow-cat-sound-effect.mp3"
+skunk = "assests/mixkit-digital-quick-tone-2866.wav"
+opossum = "assests/mixkit-video-game-mystery-alert-234.wav"
+raccoon = "assests/mixkit-police-short-whistle-615.wav"
 
 [triggers.hooks]
 enabled = false
 allowlist = ["/usr/local/bin/cds-hook"]
-frames_detect_on = 2
 max_workers = 4
+# default: 10 consecutive inferred frames to latch ON
+frames_detect_on = 2
+# default: unset => 50% of frames_detect_on (minimum 1) to latch OFF
+frames_detect_off = ""
+# default: 0 disables area gate (pixels)
+min_area_pixels = 0
+# default: 0.0 disables area gate (percent of full frame area)
+min_area_percent = 0.0
+
+
 
 [[triggers.hooks.rules]]
-classes = ["cat"]
+classes = []
 command = ["/usr/local/bin/cds-hook", "cat"]
 timeout_seconds = 5.0
 cooldown_seconds = 60.0

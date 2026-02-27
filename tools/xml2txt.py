@@ -10,6 +10,7 @@ import re
 import uuid
 import hashlib
 import shutil
+from pathlib import Path
  
  
 def get_checksum(filename, hash_function):
@@ -157,7 +158,7 @@ for xmlfile in xmlfiles:
     #                 1          2           3    
     csfmt = ("{}-{}-{}-{}-{}-{}").format( cs[0:4],cs[4:8],cs[8:12],cs[12:22],cs[22:26],cs[26:32]  )
     #xmlfile.split("/").
-    print ( " %-80s : (%4d x %4d) classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (xmlfile.replace("/z/camera/communitycats/custom_data/", ""), height, width, len(imageClasses), imageAnimal, csfmt, imageClasses))
+    print ( " %-80s : (%4d x %4d) classes ( %1d ) ( %-16s ) ( %-38s )  :  %s" % (Path(xmlfile).name, height, width, len(imageClasses), imageAnimal, csfmt, imageClasses))
     bn = "/z/camera/communitycats/custom_data/imagebyclass/" + imageAnimal + "/" + csfmt
     bn_deleted = "/z/camera/communitycats/custom_data/disabled/deleted/" + csfmt
     if animalIndex > -1 and not args.dryrun:

@@ -29,7 +29,8 @@ pp = pprint.PrettyPrinter(indent=4)
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument('--dir', help='Directory to scan for XML files.')
 parser.add_argument('--re', help='RegEx to filter files by')
-parser.add_argument('--changeto', help='Change the object name/class.')
+parser.add_argument('--matchre', help='Regex to the data to')
+parser.add_argument('--changeto', help='string to replace it with')
 
 args, _ = parser.parse_known_args()
 
@@ -85,46 +86,45 @@ for xmlfile in xmlfiles:
     f = open(xmlfile,'r')
     xml = simplexml.loads( f.read() )
     f.close()
-    jpgfile = re.sub(r'\.(xml)$', ".jpg", xmlfile )
-#    pp.pprint(xml)
-
-    # <object-class-id> <x-centre> <y-centre> <width> <height>
-    # <object-class-id> an integer from 0 to (classes - 1) corresponding to the classes in the custom_data/custom.names file
-    # height, width - Actual height and width of the image
-    # x, y - centre coordinates of the bounding box
-    # h, w - height and width of the bounding box
-    # <x-centre> : x / width
-    # <y-centre> : y / height
-    # <width> : w / width
-    # <height> : h / height
-
-    try:
-        image = Image.open(jpgfile)
-    except FileNotFoundError:
-        continue
-    
-    try:
-        height = int(xml['annotation']['size']['height'])
-        width = int(xml['annotation']['size']['width'])
-    except:
-        #img = cv2.imread(jpgfile)
-        #(height, width) = img.shape[:2]
-        xml['annotation']['size'] = {}
-        xml['annotation']['size']['height']  = image.height
-        xml['annotation']['size']['width']   = image.width
-        height = image.height
-        width  = image.width
-
-    try:
-        xml['annotation']['imagefilename'] = os.path.basename(jpgfile)
-        xml['annotation']['filename'] = os.path.basename(jpgfile)
-        mydir = os.path.dirname(jpgfile)
-        xml['annotation']['path'] = mydir
-        xml['annotation']['folder'] = os.path.basename(mydir)
-    except:
-        pass
-        
-    data = ""
+#     jpgfile = re.sub(r'\.(xml)$', ".jpg", xmlfile )
+# 
+#     # <object-class-id> <x-centre> <y-centre> <width> <height>
+#     # <object-class-id> an integer from 0 to (classes - 1) corresponding to the classes in the custom_data/custom.names file
+#     # height, width - Actual height and width of the image
+#     # x, y - centre coordinates of the bounding box
+#     # h, w - height and width of the bounding box
+#     # <x-centre> : x / width
+#     # <y-centre> : y / height
+#     # <width> : w / width
+#     # <height> : h / height
+# 
+#     try:
+#         image = Image.open(jpgfile)
+#     except FileNotFoundError:
+#         continue
+#     
+#     try:
+#         height = int(xml['annotation']['size']['height'])
+#         width = int(xml['annotation']['size']['width'])
+#     except:
+#         #img = cv2.imread(jpgfile)
+#         #(height, width) = img.shape[:2]
+#         xml['annotation']['size'] = {}
+#         xml['annotation']['size']['height']  = image.height
+#         xml['annotation']['size']['width']   = image.width
+#         height = image.height
+#         width  = image.width
+# 
+#     try:
+#         xml['annotation']['imagefilename'] = os.path.basename(jpgfile)
+#         xml['annotation']['filename'] = os.path.basename(jpgfile)
+#         mydir = os.path.dirname(jpgfile)
+#         xml['annotation']['path'] = mydir
+#         xml['annotation']['folder'] = os.path.basename(mydir)
+#     except:
+#         pass
+#         
+#     data = ""
     objects = []
 
     try: 
@@ -132,7 +132,8 @@ for xmlfile in xmlfiles:
             objects = xml['annotation']['object']
         else:
             objects.append( xml['annotation']['object'] )
-            #pp.pprint (objects)
+        print( "== Objects ================================================================" )
+        pp.pprint (objects)
     except KeyError:
         continue
     imageClasses = {}
@@ -163,20 +164,20 @@ for xmlfile in xmlfiles:
             data['changeto'] = args.changeto
         except:
             pass
-        try:
-            if len(objects) == 1:
-                if args.changeto is not None:
-                    xml['annotation']['object']["name"] = args.changeto
-            else:
-                if args.changeto is not None:
-                    xml['annotation']['object'][i]["name"] = args.changeto
-        except:
-            pass
+        try: 
+            pp.pprint(o['name'])
+            is_match = re.search(args.matchre, o['name'], flags=0)
+            if is_match is not None:
+                o['name'] = args.changeto
+                pp.pprint(o['name'])
+        except KeyError:
+            continue
         i += 1
+        print( "==================================================================" )
         printDataLine(d=data)
 
-#    pp.pprint(xml)
 
+    pp.pprint(xml)
 #    xmlfile_new = re.sub(r'\.(xml)$', "-size.xml", xmlfile )
     
     f = open(xmlfile,'w')

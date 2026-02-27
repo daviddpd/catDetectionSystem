@@ -75,9 +75,6 @@ min_area_percent = 0.0
 
 [triggers.audio.class_to_audio]
 cat = "assests/Meow-cat-sound-effect.mp3"
-"cat-domino" = "assests/Meow-cat-sound-effect.mp3"
-"cat-olive" = "assests/Meow-cat-sound-effect.mp3"
-"cat-bean" = "assests/Meow-cat-sound-effect.mp3"
 
 [triggers.hooks]
 enabled = false
