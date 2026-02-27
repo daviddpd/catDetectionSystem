@@ -64,6 +64,8 @@ def _write_rknn_conversion_bundle(onnx_path: Path, output_root: Path) -> dict[st
 
     toolkit2_script = rknn_dir / "convert_toolkit2.py"
     legacy_script = rknn_dir / "convert_legacy.py"
+    calibration_file = rknn_dir / "calibration.txt"
+    calibration_helper = rknn_dir / "make_calibration_txt.py"
 
     toolkit2_output = rknn_dir / "model.toolkit2.rknn"
     legacy_output = rknn_dir / "model.legacy.rknn"
@@ -94,15 +96,46 @@ except ModuleNotFoundError as exc:
         ) from exc
     raise
 
+from pathlib import Path
+
 ONNX_PATH = r\"{onnx_path}\"
 OUTPUT_PATH = r\"{toolkit2_output}\"
 TARGET_PLATFORM = "RK3588"
-CALIBRATION_DATASET = "./calibration.txt"
+DO_QUANTIZATION = True
+CALIBRATION_DATASET = Path(__file__).with_name("calibration.txt")
+
+
+def _resolve_calibration_dataset() -> str | None:
+    if not DO_QUANTIZATION:
+        return None
+    if not CALIBRATION_DATASET.exists():
+        raise SystemExit(
+            "Calibration dataset file not found: "
+            + str(CALIBRATION_DATASET)
+            + ". Generate it with: "
+            + f"python3 {{Path(__file__).with_name('make_calibration_txt.py')}} /path/to/images"
+        )
+    lines = [
+        line.strip()
+        for line in CALIBRATION_DATASET.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not lines:
+        raise SystemExit(
+            "Calibration dataset file is empty: "
+            + str(CALIBRATION_DATASET)
+            + ". Add one absolute image path per line, or set DO_QUANTIZATION = False "
+            + "for a non-quantized conversion."
+        )
+    return str(CALIBRATION_DATASET)
 
 rknn = RKNN(verbose=True)
 rknn.config(target_platform=TARGET_PLATFORM)
 assert rknn.load_onnx(model=ONNX_PATH) == 0
-assert rknn.build(do_quantization=True, dataset=CALIBRATION_DATASET) == 0
+assert rknn.build(
+    do_quantization=DO_QUANTIZATION,
+    dataset=_resolve_calibration_dataset(),
+) == 0
 assert rknn.export_rknn(OUTPUT_PATH) == 0
 rknn.release()
 print("Exported", OUTPUT_PATH)
@@ -134,24 +167,137 @@ except ModuleNotFoundError as exc:
         ) from exc
     raise
 
+from pathlib import Path
+
 ONNX_PATH = r\"{onnx_path}\"
 OUTPUT_PATH = r\"{legacy_output}\"
 TARGET_PLATFORM = "RK1808"
-CALIBRATION_DATASET = "./calibration.txt"
+DO_QUANTIZATION = True
+CALIBRATION_DATASET = Path(__file__).with_name("calibration.txt")
+
+
+def _resolve_calibration_dataset() -> str | None:
+    if not DO_QUANTIZATION:
+        return None
+    if not CALIBRATION_DATASET.exists():
+        raise SystemExit(
+            "Calibration dataset file not found: "
+            + str(CALIBRATION_DATASET)
+            + ". Generate it with: "
+            + f"python3 {{Path(__file__).with_name('make_calibration_txt.py')}} /path/to/images"
+        )
+    lines = [
+        line.strip()
+        for line in CALIBRATION_DATASET.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not lines:
+        raise SystemExit(
+            "Calibration dataset file is empty: "
+            + str(CALIBRATION_DATASET)
+            + ". Add one absolute image path per line, or set DO_QUANTIZATION = False "
+            + "for a non-quantized conversion."
+        )
+    return str(CALIBRATION_DATASET)
 
 rknn = RKNN(verbose=True)
 rknn.config(target_platform=TARGET_PLATFORM)
 assert rknn.load_onnx(model=ONNX_PATH) == 0
-assert rknn.build(do_quantization=True, dataset=CALIBRATION_DATASET) == 0
+assert rknn.build(
+    do_quantization=DO_QUANTIZATION,
+    dataset=_resolve_calibration_dataset(),
+) == 0
 assert rknn.export_rknn(OUTPUT_PATH) == 0
 rknn.release()
 print("Exported", OUTPUT_PATH)
 """,
         encoding="utf-8",
     )
+    calibration_helper.write_text(
+        """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import random
+from pathlib import Path
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+
+
+def _iter_images(root: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Build an RKNN calibration.txt file from a directory of images."
+    )
+    parser.add_argument("source", help="Directory scanned recursively for images")
+    parser.add_argument(
+        "--output",
+        default=str(Path(__file__).with_name("calibration.txt")),
+        help="Output text file path (default: alongside this script)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=200,
+        help="Maximum number of image paths to write (0 = all, default: 200)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=1337,
+        help="Shuffle seed before truncation (default: 1337)",
+    )
+    args = parser.parse_args()
+
+    source = Path(args.source).expanduser().resolve()
+    if not source.exists() or not source.is_dir():
+        raise SystemExit(f"Source directory not found: {source}")
+
+    images = _iter_images(source)
+    if not images:
+        raise SystemExit(
+            "No calibration images found under "
+            + str(source)
+            + ". Supported extensions: "
+            + ", ".join(sorted(IMAGE_EXTENSIONS))
+        )
+
+    rng = random.Random(args.seed)
+    rng.shuffle(images)
+    selected = images if args.limit <= 0 else images[: args.limit]
+
+    output = Path(args.output).expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        "".join(f"{path.resolve()}\\n" for path in selected),
+        encoding="utf-8",
+    )
+    print(f"Wrote {len(selected)} calibration entries to {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+""",
+        encoding="utf-8",
+    )
+    calibration_file.write_text(
+        "# One absolute image path per line for RKNN quantization calibration.\n"
+        "# Generate with:\n"
+        "#   python3 ./make_calibration_txt.py /path/to/images --limit 200\n",
+        encoding="utf-8",
+    )
 
     toolkit2_script.chmod(0o755)
     legacy_script.chmod(0o755)
+    calibration_helper.chmod(0o755)
 
     chip_notes = rknn_dir / "chip_families.txt"
     chip_notes.write_text(
@@ -166,6 +312,8 @@ print("Exported", OUTPUT_PATH)
     return {
         "toolkit2_script": str(toolkit2_script),
         "legacy_script": str(legacy_script),
+        "calibration_file": str(calibration_file),
+        "calibration_helper": str(calibration_helper),
         "chip_notes": str(chip_notes),
     }
 
@@ -351,7 +499,7 @@ def export_model_artifacts(
                     "status": "ok",
                     "artifact": str(output_root / "rknn"),
                     "bundle": bundle,
-                    "message": "Generated RKNN conversion scripts and chip-family notes",
+                    "message": "Generated RKNN conversion scripts, calibration template/helper, and chip-family notes",
                 }
             )
 

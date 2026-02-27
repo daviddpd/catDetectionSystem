@@ -35,6 +35,8 @@ Legacy toolkit family:
 Bundle output:
 - `artifacts/models/<run-id>/rknn/convert_toolkit2.py`
 - `artifacts/models/<run-id>/rknn/convert_legacy.py`
+- `artifacts/models/<run-id>/rknn/calibration.txt`
+- `artifacts/models/<run-id>/rknn/make_calibration_txt.py`
 - `artifacts/models/<run-id>/rknn/chip_families.txt`
 
 ## Calibration / Quantization Inputs
@@ -44,7 +46,22 @@ Prepare a calibration file containing representative image paths:
 - 100-1000 images recommended for stable quantization
 - include day/night and weather variance
 
-Set this path in conversion scripts as `CALIBRATION_DATASET`.
+The generated scripts now look for `calibration.txt` in the same directory as the script, not the current shell directory.
+
+Generate it from a directory of images:
+
+```bash
+python3 artifacts/models/<run-id>/rknn/make_calibration_txt.py \
+  /path/to/calibration-images \
+  --output artifacts/models/<run-id>/rknn/calibration.txt \
+  --limit 200
+```
+
+You can also write it manually:
+- one absolute image path per line
+- blank lines and `#` comment lines are ignored
+
+If you want a quick functional conversion without quantization, edit the generated conversion script and set `DO_QUANTIZATION = False`.
 
 ## Artifact Naming Convention
 
