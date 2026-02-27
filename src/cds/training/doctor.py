@@ -76,27 +76,96 @@ def _check_tensorrt_toolchain() -> dict[str, Any]:
         }
 
 
-def _check_rknn_toolchain() -> dict[str, Any]:
-    candidates = ["rknn", "rknn_toolkit2", "rknnlite"]
-    installed = []
-    for name in candidates:
-        try:
-            module = __import__(name)
-            installed.append({"name": name, "version": getattr(module, "__version__", "installed")})
-        except Exception:
-            pass
+def _check_setuptools_pkg_resources() -> dict[str, Any]:
+    try:
+        import setuptools
+        import pkg_resources  # noqa: F401
 
-    ok = len(installed) > 0
-    return {
-        "name": "rknn_toolchain",
-        "ok": ok,
-        "installed": installed,
-        "hint": "Install rknn-toolkit2 on conversion host (or legacy toolkit for old NPUs)",
-    }
+        version = getattr(setuptools, "__version__", "installed")
+        return {
+            "name": "setuptools",
+            "ok": True,
+            "version": str(version),
+            "hint": "",
+        }
+    except Exception as exc:
+        return {
+            "name": "setuptools",
+            "ok": False,
+            "version": None,
+            "error": str(exc),
+            "hint": (
+                "Install setuptools (provides pkg_resources). "
+                "On Python 3.12 venvs this may be missing by default: "
+                "python3 -m pip install setuptools"
+            ),
+        }
+
+
+def _check_rknn_toolkit2() -> dict[str, Any]:
+    try:
+        import pkg_resources  # noqa: F401
+    except Exception as exc:
+        return {
+            "name": "rknn_toolkit2",
+            "ok": False,
+            "version": None,
+            "error": str(exc),
+            "hint": (
+                "Install setuptools first, then re-run the check. "
+                "rknn-toolkit2 still imports pkg_resources."
+            ),
+        }
+
+    try:
+        import rknn
+        from rknn.api import RKNN  # noqa: F401
+
+        version = getattr(rknn, "__version__", "installed")
+        return {
+            "name": "rknn_toolkit2",
+            "ok": True,
+            "version": str(version),
+            "hint": "",
+        }
+    except Exception as exc:
+        return {
+            "name": "rknn_toolkit2",
+            "ok": False,
+            "version": None,
+            "error": str(exc),
+            "hint": (
+                "Install rknn-toolkit2 on the conversion host. "
+                "rknnlite alone is runtime-only and cannot export .rknn models."
+            ),
+        }
+
+
+def _check_rknnlite_runtime() -> dict[str, Any]:
+    try:
+        import rknnlite
+
+        version = getattr(rknnlite, "__version__", "installed")
+        return {
+            "name": "rknnlite",
+            "ok": True,
+            "version": str(version),
+            "hint": "",
+        }
+    except Exception as exc:
+        return {
+            "name": "rknnlite",
+            "ok": False,
+            "version": None,
+            "error": str(exc),
+            "hint": (
+                "Install rknn-toolkit-lite2 on the deployment host "
+                "to run exported .rknn models."
+            ),
+        }
 
 
 def run_training_doctor() -> dict[str, Any]:
-    system = platform.system().lower()
     checks = [
         _check_module("ultralytics", "pip install ultralytics"),
         _check_module(
@@ -110,7 +179,9 @@ def run_training_doctor() -> dict[str, Any]:
             "pip install coremltools (typically used on macOS)",
         ),
         _check_tensorrt_toolchain(),
-        _check_rknn_toolchain(),
+        _check_setuptools_pkg_resources(),
+        _check_rknn_toolkit2(),
+        _check_rknnlite_runtime(),
         _check_ffmpeg(),
     ]
 

@@ -7,6 +7,7 @@ prometheus-client
 onnx
 onnxruntime
 PyYAML
+setuptools  # rknn-toolkit2 still imports pkg_resources
 # YOLO-World text encoder dependency used by bootstrap-openvocab
 clip @ git+https://github.com/ultralytics/CLIP.git
 tomli; python_version < "3.11"

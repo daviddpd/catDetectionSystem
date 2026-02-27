@@ -25,7 +25,8 @@ def available_export_targets() -> dict[str, dict[str, Any]]:
     has_onnx = _module("onnx")
     has_coremltools = _module("coremltools")
     has_tensorrt = _module("tensorrt")
-    has_rknn = _module("rknn") or _module("rknn_toolkit2") or _module("rknnlite")
+    has_rknn_toolkit = _module("setuptools") and (_module("rknn") or _module("rknn_toolkit2"))
+    has_rknn_runtime = _module("rknnlite")
 
     return {
         "pytorch": {"supported": True, "reason": "checkpoint copy"},
@@ -44,7 +45,8 @@ def available_export_targets() -> dict[str, dict[str, Any]]:
         "rknn": {
             "supported": has_onnx,
             "reason": "ONNX export required; conversion can run offline on RKNN host",
-            "toolkit_present": has_rknn,
+            "toolkit_present": has_rknn_toolkit,
+            "runtime_present": has_rknn_runtime,
         },
     }
 
@@ -73,6 +75,14 @@ from __future__ import annotations
 # Toolkit2 conversion template. Run on an RKNN Toolkit2-capable host.
 # Update target_platform and dataset calibration file before execution.
 
+try:
+    import pkg_resources  # noqa: F401
+except ModuleNotFoundError as exc:
+    raise SystemExit(
+        "Missing Python package 'setuptools' (provides pkg_resources). "
+        "Install it in this environment: python3 -m pip install setuptools"
+    ) from exc
+
 from rknn.api import RKNN
 
 ONNX_PATH = r\"{onnx_path}\"
@@ -95,6 +105,14 @@ print("Exported", OUTPUT_PATH)
 from __future__ import annotations
 
 # Legacy RKNN toolkit conversion template. Run on legacy-compatible host.
+
+try:
+    import pkg_resources  # noqa: F401
+except ModuleNotFoundError as exc:
+    raise SystemExit(
+        "Missing Python package 'setuptools' (provides pkg_resources). "
+        "Install it in this environment: python3 -m pip install setuptools"
+    ) from exc
 
 from rknn.api import RKNN
 

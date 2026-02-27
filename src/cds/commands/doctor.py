@@ -147,6 +147,8 @@ def _print_training(report: dict[str, Any]) -> None:
         if check.get("path"):
             extra.append(f"path={check['path']}")
         print(f"  - {check['name']}: {status}" + (f" ({'; '.join(extra)})" if extra else ""))
+        if check.get("error"):
+            print(f"    error: {check['error']}")
         if check.get("hint"):
             print(f"    hint: {check['hint']}")
 
