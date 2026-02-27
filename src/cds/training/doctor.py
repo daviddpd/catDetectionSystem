@@ -79,9 +79,22 @@ def _check_tensorrt_toolchain() -> dict[str, Any]:
 def _check_setuptools_pkg_resources() -> dict[str, Any]:
     try:
         import setuptools
-        import pkg_resources  # noqa: F401
 
         version = getattr(setuptools, "__version__", "installed")
+    except Exception as exc:
+        return {
+            "name": "setuptools",
+            "ok": False,
+            "version": None,
+            "error": str(exc),
+            "hint": (
+                "Install setuptools in this environment: "
+                "python3 -m pip install 'setuptools<82'"
+            ),
+        }
+
+    try:
+        import pkg_resources  # noqa: F401
         return {
             "name": "setuptools",
             "ok": True,
@@ -92,12 +105,13 @@ def _check_setuptools_pkg_resources() -> dict[str, Any]:
         return {
             "name": "setuptools",
             "ok": False,
-            "version": None,
+            "version": str(version),
             "error": str(exc),
             "hint": (
-                "Install setuptools (provides pkg_resources). "
-                "On Python 3.12 venvs this may be missing by default: "
-                "python3 -m pip install setuptools"
+                "setuptools is installed, but pkg_resources is unavailable. "
+                "setuptools 82 removed pkg_resources; RKNN Toolkit2 still requires it. "
+                "Pin setuptools below 82 in this environment: "
+                "python3 -m pip install --force-reinstall 'setuptools<82'"
             ),
         }
 
@@ -106,14 +120,25 @@ def _check_rknn_toolkit2() -> dict[str, Any]:
     try:
         import pkg_resources  # noqa: F401
     except Exception as exc:
+        version = None
+        try:
+            import setuptools
+
+            version = getattr(setuptools, "__version__", "installed")
+        except Exception:
+            version = None
+        version_hint = f"setuptools {version} is installed, but " if version else ""
         return {
             "name": "rknn_toolkit2",
             "ok": False,
             "version": None,
             "error": str(exc),
             "hint": (
-                "Install setuptools first, then re-run the check. "
-                "rknn-toolkit2 still imports pkg_resources."
+                version_hint
+                + "pkg_resources is unavailable. "
+                + "RKNN Toolkit2 still depends on pkg_resources. "
+                + "Pin setuptools below 82 in this environment: "
+                + "python3 -m pip install --force-reinstall 'setuptools<82'"
             ),
         }
 

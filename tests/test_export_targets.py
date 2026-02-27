@@ -24,10 +24,10 @@ class ExportTargetsTests(unittest.TestCase):
             toolkit2_text = Path(bundle["toolkit2_script"]).read_text(encoding="utf-8")
             legacy_text = Path(bundle["legacy_script"]).read_text(encoding="utf-8")
 
-            self.assertIn("import pkg_resources", toolkit2_text)
-            self.assertIn("python3 -m pip install setuptools", toolkit2_text)
-            self.assertIn("import pkg_resources", legacy_text)
-            self.assertIn("python3 -m pip install setuptools", legacy_text)
+            self.assertIn("from rknn.api import RKNN", toolkit2_text)
+            self.assertIn("python3 -m pip install 'setuptools<82'", toolkit2_text)
+            self.assertIn("from rknn.api import RKNN", legacy_text)
+            self.assertIn("python3 -m pip install 'setuptools<82'", legacy_text)
 
 
 if __name__ == "__main__":

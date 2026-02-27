@@ -59,14 +59,14 @@ Legacy output:
 Run on a properly provisioned conversion host:
 
 ```bash
-python3 -m pip install setuptools
+python3 -m pip install --force-reinstall 'setuptools<82'
 python3 artifacts/models/<run-id>/rknn/convert_toolkit2.py
 python3 artifacts/models/<run-id>/rknn/convert_legacy.py
 ```
 
 ## Troubleshooting
 - Missing RKNN package: install toolkit package matching chip family
-- `ModuleNotFoundError: No module named 'pkg_resources'`: install `setuptools` in that venv (`python3 -m pip install setuptools`); `rknn-toolkit2` still depends on `pkg_resources`
+- `ModuleNotFoundError: No module named 'pkg_resources'`: `setuptools 82.0.0` removed `pkg_resources`; pin below 82 in that venv (`python3 -m pip install --force-reinstall 'setuptools<82'`)
 - `rknnlite` installed but conversion still fails: `rknnlite` is runtime-only; ONNX -> `.rknn` conversion requires `rknn-toolkit2`
 - Build errors from unsupported ONNX ops: simplify model, re-export ONNX, or use a smaller checkpoint
 - Quantization instability: improve calibration coverage and image quality

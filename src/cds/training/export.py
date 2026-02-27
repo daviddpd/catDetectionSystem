@@ -76,14 +76,23 @@ from __future__ import annotations
 # Update target_platform and dataset calibration file before execution.
 
 try:
-    import pkg_resources  # noqa: F401
+    from rknn.api import RKNN
 except ModuleNotFoundError as exc:
-    raise SystemExit(
-        "Missing Python package 'setuptools' (provides pkg_resources). "
-        "Install it in this environment: python3 -m pip install setuptools"
-    ) from exc
-
-from rknn.api import RKNN
+    if exc.name == "pkg_resources":
+        try:
+            import setuptools
+            version = getattr(setuptools, "__version__", "installed")
+        except Exception:
+            version = None
+        version_note = f"setuptools {{version}} is installed, " if version else ""
+        raise SystemExit(
+            version_note
+            + "but pkg_resources is unavailable. "
+            + "RKNN Toolkit2 currently requires pkg_resources. "
+            + "Pin setuptools below 82 in this environment: "
+            + "python3 -m pip install 'setuptools<82'"
+        ) from exc
+    raise
 
 ONNX_PATH = r\"{onnx_path}\"
 OUTPUT_PATH = r\"{toolkit2_output}\"
@@ -107,14 +116,23 @@ from __future__ import annotations
 # Legacy RKNN toolkit conversion template. Run on legacy-compatible host.
 
 try:
-    import pkg_resources  # noqa: F401
+    from rknn.api import RKNN
 except ModuleNotFoundError as exc:
-    raise SystemExit(
-        "Missing Python package 'setuptools' (provides pkg_resources). "
-        "Install it in this environment: python3 -m pip install setuptools"
-    ) from exc
-
-from rknn.api import RKNN
+    if exc.name == "pkg_resources":
+        try:
+            import setuptools
+            version = getattr(setuptools, "__version__", "installed")
+        except Exception:
+            version = None
+        version_note = f"setuptools {{version}} is installed, " if version else ""
+        raise SystemExit(
+            version_note
+            + "but pkg_resources is unavailable. "
+            + "The RKNN Python conversion tool currently requires pkg_resources. "
+            + "Pin setuptools below 82 in this environment: "
+            + "python3 -m pip install 'setuptools<82'"
+        ) from exc
+    raise
 
 ONNX_PATH = r\"{onnx_path}\"
 OUTPUT_PATH = r\"{legacy_output}\"
