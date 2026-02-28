@@ -197,9 +197,8 @@ class RKNNBackendTests(unittest.TestCase):
 
         self.assertEqual(len(detections), 1)
         self.assertEqual(
-            calls[:2],
+            calls,
             [
-                (416, 416, "nhwc", True, True, "float32", True),
                 (640, 640, "nhwc", False, False, "uint8", True),
             ],
         )
@@ -246,6 +245,86 @@ class RKNNBackendTests(unittest.TestCase):
 
         with self.assertRaises(BackendUnavailable):
             backend.infer(np.zeros((10, 10, 3), dtype=np.uint8))
+
+    def test_infer_stops_after_first_valid_candidate_tier(self) -> None:
+        backend = RKNNBackend()
+        backend._runtime = object()
+        backend._model_spec = ModelSpec(
+            name="rknn-test",
+            model_path="model.rknn",
+            confidence=0.95,
+            nms=0.5,
+            imgsz=416,
+        )
+        backend._labels = ["cat", "dog"]
+        backend._input_height = 416
+        backend._input_width = 416
+        backend._input_format = "nhwc"
+        backend._normalize_input = True
+        backend._swap_rb = True
+        backend._input_dtype = "float32"
+        backend._input_batched = True
+        backend._input_candidates = [
+            (640, 640, "nhwc", False, True, "uint8", True),
+            (640, 640, "nhwc", False, False, "uint8", True),
+            (640, 640, "nhwc", True, True, "float32", True),
+        ]
+
+        calls: list[tuple[str, bool]] = []
+
+        def fake_preprocess(
+            frame: Any,
+            *,
+            input_h: int,
+            input_w: int,
+            input_format: str,
+            normalize_input: bool,
+            swap_rb: bool,
+            input_dtype: str,
+            input_batched: bool,
+        ) -> tuple[np.ndarray, tuple[int, int]]:
+            _ = frame
+            _ = input_h
+            _ = input_w
+            _ = input_format
+            _ = normalize_input
+            _ = input_batched
+            calls.append((input_dtype, swap_rb))
+            dtype = np.uint8 if input_dtype == "uint8" else np.float32
+            return np.zeros((1, 640, 640, 3), dtype=dtype), (640, 640)
+
+        def fake_run(input_tensor: np.ndarray, *, input_format: str, input_dtype: str) -> Any:
+            _ = input_tensor
+            _ = input_format
+            if input_dtype == "float32":
+                raise AssertionError("float32 tier should not be probed after valid uint8 tier")
+            if calls[-1][1]:
+                return np.array(
+                    [[[50.0], [60.0], [20.0], [10.0], [0.70], [0.10]]],
+                    dtype=np.float32,
+                )
+            return np.array(
+                [[[50.0], [60.0], [20.0], [10.0], [0.05], [0.10]]],
+                dtype=np.float32,
+            )
+
+        backend._preprocess = fake_preprocess  # type: ignore[method-assign]
+        backend._run_rknn = fake_run  # type: ignore[method-assign]
+        backend._decode_merged = (  # type: ignore[method-assign]
+            lambda *, merged, nc, frame_shape, input_hw: []
+        )
+
+        detections = backend.infer(np.zeros((100, 100, 3), dtype=np.uint8))
+
+        self.assertEqual(detections, [])
+        self.assertEqual(
+            calls,
+            [
+                ("uint8", True),
+                ("uint8", False),
+            ],
+        )
+        self.assertEqual(backend._input_candidates, [(640, 640, "nhwc", False, True, "uint8", True)])
 
 
 if __name__ == "__main__":

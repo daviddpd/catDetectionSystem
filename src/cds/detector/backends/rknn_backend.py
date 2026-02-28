@@ -78,7 +78,6 @@ class RKNNBackend(DetectorBackend):
             raise RuntimeError("Backend not loaded")
 
         errors: list[str] = []
-        best_empty_result: tuple[int, int, str, bool, bool, str, bool, float] | None = None
         log_candidate_scores = not self._candidate_scores_logged
         candidates = (
             [
@@ -95,75 +94,103 @@ class RKNNBackend(DetectorBackend):
             if len(self._input_candidates) <= 1
             else list(self._input_candidates)
         )
-        for (
-            input_h,
-            input_w,
-            input_format,
-            normalize_input,
-            swap_rb,
-            input_dtype,
-            input_batched,
-        ) in candidates:
-            input_tensor, input_hw = self._preprocess(
-                frame,
-                input_h=input_h,
-                input_w=input_w,
-                input_format=input_format,
-                normalize_input=normalize_input,
-                swap_rb=swap_rb,
-                input_dtype=input_dtype,
-                input_batched=input_batched,
-            )
-            raw_outputs = self._run_rknn(
-                input_tensor,
-                input_format=input_format,
-                input_dtype=input_dtype,
-            )
-            if not self._raw_outputs_valid(raw_outputs):
-                errors.append(
-                    "candidate="
-                    f"{input_h}x{input_w}/{input_format}/"
-                    f"{'norm' if normalize_input else 'raw'}/"
-                    f"{'rgb' if swap_rb else 'bgr'}/"
-                    f"{input_dtype}/"
-                    f"{'batched' if input_batched else 'single'} produced no usable outputs"
-                )
-                continue
+        for tier_candidates in self._group_candidates_by_probe_tier(candidates):
+            best_empty_result: tuple[int, int, str, bool, bool, str, bool, float] | None = None
+            best_detection_result: tuple[
+                int,
+                int,
+                str,
+                bool,
+                bool,
+                str,
+                bool,
+                float,
+                list[Detection],
+            ] | None = None
 
-            try:
-                merged = self._merge_outputs(raw_outputs)
-                nc = max(1, merged.shape[1] - 4)
-                score_max = self._class_score_max(merged, nc)
-                if log_candidate_scores:
-                    self._log_candidate_score(
-                        input_h=input_h,
-                        input_w=input_w,
-                        input_format=input_format,
-                        normalize_input=normalize_input,
-                        swap_rb=swap_rb,
-                        input_dtype=input_dtype,
-                        input_batched=input_batched,
-                        score_max=score_max,
+            for (
+                input_h,
+                input_w,
+                input_format,
+                normalize_input,
+                swap_rb,
+                input_dtype,
+                input_batched,
+            ) in tier_candidates:
+                input_tensor, input_hw = self._preprocess(
+                    frame,
+                    input_h=input_h,
+                    input_w=input_w,
+                    input_format=input_format,
+                    normalize_input=normalize_input,
+                    swap_rb=swap_rb,
+                    input_dtype=input_dtype,
+                    input_batched=input_batched,
+                )
+                raw_outputs = self._run_rknn(
+                    input_tensor,
+                    input_format=input_format,
+                    input_dtype=input_dtype,
+                )
+                if not self._raw_outputs_valid(raw_outputs):
+                    errors.append(
+                        "candidate="
+                        f"{input_h}x{input_w}/{input_format}/"
+                        f"{'norm' if normalize_input else 'raw'}/"
+                        f"{'rgb' if swap_rb else 'bgr'}/"
+                        f"{input_dtype}/"
+                        f"{'batched' if input_batched else 'single'} produced no usable outputs"
                     )
-                self._log_output_stats_once(merged, nc)
-                detections = self._decode_merged(
-                    merged=merged,
-                    nc=nc,
-                    frame_shape=frame.shape[:2],
-                    input_hw=input_hw,
-                )
-            except ModelLoadError as exc:
-                errors.append(
-                    "candidate="
-                    f"{input_h}x{input_w}/{input_format}/"
-                    f"{'norm' if normalize_input else 'raw'}/"
-                    f"{'rgb' if swap_rb else 'bgr'}/"
-                    f"{input_dtype}/"
-                    f"{'batched' if input_batched else 'single'} decode failed: {exc}"
-                )
-                continue
+                    continue
 
-            if not detections:
+                try:
+                    merged = self._merge_outputs(raw_outputs)
+                    nc = max(1, merged.shape[1] - 4)
+                    score_max = self._class_score_max(merged, nc)
+                    if log_candidate_scores:
+                        self._log_candidate_score(
+                            input_h=input_h,
+                            input_w=input_w,
+                            input_format=input_format,
+                            normalize_input=normalize_input,
+                            swap_rb=swap_rb,
+                            input_dtype=input_dtype,
+                            input_batched=input_batched,
+                            score_max=score_max,
+                        )
+                    self._log_output_stats_once(merged, nc)
+                    detections = self._decode_merged(
+                        merged=merged,
+                        nc=nc,
+                        frame_shape=frame.shape[:2],
+                        input_hw=input_hw,
+                    )
+                except ModelLoadError as exc:
+                    errors.append(
+                        "candidate="
+                        f"{input_h}x{input_w}/{input_format}/"
+                        f"{'norm' if normalize_input else 'raw'}/"
+                        f"{'rgb' if swap_rb else 'bgr'}/"
+                        f"{input_dtype}/"
+                        f"{'batched' if input_batched else 'single'} decode failed: {exc}"
+                    )
+                    continue
+
+                if detections:
+                    if best_detection_result is None or score_max > best_detection_result[7]:
+                        best_detection_result = (
+                            input_h,
+                            input_w,
+                            input_format,
+                            normalize_input,
+                            swap_rb,
+                            input_dtype,
+                            input_batched,
+                            score_max,
+                            detections,
+                        )
+                    continue
+
                 if best_empty_result is None or score_max > best_empty_result[7]:
                     best_empty_result = (
                         input_h,
@@ -175,102 +202,55 @@ class RKNNBackend(DetectorBackend):
                         input_batched,
                         score_max,
                     )
-                continue
 
-            if (
-                input_h != self._input_height
-                or input_w != self._input_width
-                or input_format != self._input_format
-                or normalize_input != self._normalize_input
-                or swap_rb != self._swap_rb
-                or input_dtype != self._input_dtype
-                or input_batched != self._input_batched
-                or len(self._input_candidates) != 1
-            ):
-                self._input_height = input_h
-                self._input_width = input_w
-                self._input_format = input_format
-                self._normalize_input = normalize_input
-                self._swap_rb = swap_rb
-                self._input_dtype = input_dtype
-                self._input_batched = input_batched
-                self._input_candidates = [
-                    (
-                        input_h,
-                        input_w,
-                        input_format,
-                        normalize_input,
-                        swap_rb,
-                        input_dtype,
-                        input_batched,
-                    )
-                ]
-                self._logger.info(
-                    "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s dtype=%s batch=%s",
+            if best_detection_result is not None:
+                (
                     input_h,
                     input_w,
                     input_format,
-                    ("norm" if normalize_input else "raw"),
-                    ("rgb" if swap_rb else "bgr"),
+                    normalize_input,
+                    swap_rb,
                     input_dtype,
-                    ("batched" if input_batched else "single"),
+                    input_batched,
+                    _score_max,
+                    detections,
+                ) = best_detection_result
+                self._lock_input_profile(
+                    input_h=input_h,
+                    input_w=input_w,
+                    input_format=input_format,
+                    normalize_input=normalize_input,
+                    swap_rb=swap_rb,
+                    input_dtype=input_dtype,
+                    input_batched=input_batched,
                 )
-            self._candidate_scores_logged = True
-            return detections
+                self._candidate_scores_logged = True
+                return detections
 
-        if best_empty_result is not None:
-            (
-                input_h,
-                input_w,
-                input_format,
-                normalize_input,
-                swap_rb,
-                input_dtype,
-                input_batched,
-                score_max,
-            ) = best_empty_result
-            if (
-                input_h != self._input_height
-                or input_w != self._input_width
-                or input_format != self._input_format
-                or normalize_input != self._normalize_input
-                or swap_rb != self._swap_rb
-                or input_dtype != self._input_dtype
-                or input_batched != self._input_batched
-                or len(self._input_candidates) != 1
-            ):
-                self._input_height = input_h
-                self._input_width = input_w
-                self._input_format = input_format
-                self._normalize_input = normalize_input
-                self._swap_rb = swap_rb
-                self._input_dtype = input_dtype
-                self._input_batched = input_batched
-                self._input_candidates = [
-                    (
-                        input_h,
-                        input_w,
-                        input_format,
-                        normalize_input,
-                        swap_rb,
-                        input_dtype,
-                        input_batched,
-                    )
-                ]
-                self._logger.info(
-                    "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s dtype=%s batch=%s max_cls=%.4f",
+            if best_empty_result is not None:
+                (
                     input_h,
                     input_w,
                     input_format,
-                    ("norm" if normalize_input else "raw"),
-                    ("rgb" if swap_rb else "bgr"),
+                    normalize_input,
+                    swap_rb,
                     input_dtype,
-                    ("batched" if input_batched else "single"),
+                    input_batched,
                     score_max,
+                ) = best_empty_result
+                self._lock_input_profile(
+                    input_h=input_h,
+                    input_w=input_w,
+                    input_format=input_format,
+                    normalize_input=normalize_input,
+                    swap_rb=swap_rb,
+                    input_dtype=input_dtype,
+                    input_batched=input_batched,
+                    score_max=score_max,
                 )
-            self._candidate_scores_logged = True
-            self._log_confidence_hint_max(score_max)
-            return []
+                self._candidate_scores_logged = True
+                self._log_confidence_hint_max(score_max)
+                return []
 
         self._candidate_scores_logged = True
         raise BackendUnavailable(
@@ -448,6 +428,93 @@ class RKNNBackend(DetectorBackend):
             _add_variants(640, 640, "nchw")
 
         return candidates
+
+    @staticmethod
+    def _candidate_probe_tier(candidate: tuple[int, int, str, bool, bool, str, bool]) -> int:
+        _h, _w, input_format, _normalize_input, _swap_rb, input_dtype, input_batched = candidate
+        if input_format == "nhwc" and input_dtype == "uint8" and input_batched:
+            return 0
+        if input_format == "nhwc" and input_dtype == "float32" and input_batched:
+            return 1
+        if input_dtype == "float32" and input_batched:
+            return 2
+        return 3
+
+    def _group_candidates_by_probe_tier(
+        self,
+        candidates: list[tuple[int, int, str, bool, bool, str, bool]],
+    ) -> list[list[tuple[int, int, str, bool, bool, str, bool]]]:
+        grouped: dict[int, list[tuple[int, int, str, bool, bool, str, bool]]] = {}
+        for candidate in candidates:
+            tier = self._candidate_probe_tier(candidate)
+            grouped.setdefault(tier, []).append(candidate)
+        return [grouped[tier] for tier in sorted(grouped)]
+
+    def _lock_input_profile(
+        self,
+        *,
+        input_h: int,
+        input_w: int,
+        input_format: str,
+        normalize_input: bool,
+        swap_rb: bool,
+        input_dtype: str,
+        input_batched: bool,
+        score_max: float | None = None,
+    ) -> None:
+        if (
+            input_h == self._input_height
+            and input_w == self._input_width
+            and input_format == self._input_format
+            and normalize_input == self._normalize_input
+            and swap_rb == self._swap_rb
+            and input_dtype == self._input_dtype
+            and input_batched == self._input_batched
+            and len(self._input_candidates) == 1
+        ):
+            return
+
+        self._input_height = input_h
+        self._input_width = input_w
+        self._input_format = input_format
+        self._normalize_input = normalize_input
+        self._swap_rb = swap_rb
+        self._input_dtype = input_dtype
+        self._input_batched = input_batched
+        self._input_candidates = [
+            (
+                input_h,
+                input_w,
+                input_format,
+                normalize_input,
+                swap_rb,
+                input_dtype,
+                input_batched,
+            )
+        ]
+        if score_max is None:
+            self._logger.info(
+                "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s dtype=%s batch=%s",
+                input_h,
+                input_w,
+                input_format,
+                ("norm" if normalize_input else "raw"),
+                ("rgb" if swap_rb else "bgr"),
+                input_dtype,
+                ("batched" if input_batched else "single"),
+            )
+            return
+        self._logger.info(
+            "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s dtype=%s batch=%s max_cls=%.4f",
+            input_h,
+            input_w,
+            input_format,
+            ("norm" if normalize_input else "raw"),
+            ("rgb" if swap_rb else "bgr"),
+            input_dtype,
+            ("batched" if input_batched else "single"),
+            score_max,
+        )
 
     def _resolve_labels(self, model_spec: ModelSpec) -> list[str]:
         file_labels = model_spec.read_labels()
@@ -870,8 +937,8 @@ class RKNNBackend(DetectorBackend):
             return
         if max_conf < self._model_spec.confidence:
             self._confidence_hint_logged = True
-            self._logger.warning(
-                "rknn max class score %.4f is below confidence threshold %.4f; try lowering --confidence",
+            self._logger.info(
+                "rknn probe frame max class score %.4f is below confidence threshold %.4f; later frames may still detect",
                 max_conf,
                 self._model_spec.confidence,
             )
