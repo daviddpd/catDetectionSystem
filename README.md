@@ -102,6 +102,28 @@ Run detect with CoreML:
   --uri /path/to/video_or_rtsp
 ```
 
+## RKNN / Orange Pi Notes
+
+For RK3588 / Orange Pi style hosts:
+- `backend=auto` will only consider RKNN when the runtime host looks Rockchip-ready. The selector checks for `rknn_server`, `/dev/rknpu`, `/usr/lib/librknnrt.so`, or `/usr/lib64/librknnrt.so`.
+- If auto selection does not choose RKNN yet, force it explicitly with `--backend rknn`.
+- Some RKNN Toolkit2 / RKNNLite environments do not ship `librknnrt.so` in a standard system path. If runtime init fails with a missing dynamic library error, place `librknnrt.so` in `/usr/lib/` (or `/usr/lib64/`) on the device.
+
+Example:
+
+```bash
+./cds detect \
+  --backend rknn \
+  --model-path artifacts/models/<run-id>/rknn/model.toolkit2.rknn \
+  --labels-path dataset/classes.txt \
+  --uri /path/to/video_or_rtsp
+```
+
+Current scope:
+- The RKNN backend is implemented for Ultralytics-style detect models exported by this project (for example the `best.onnx` -> `model.toolkit2.rknn` path).
+- It assumes the exported model follows the same single-output detect head layout as the paired ONNX export.
+- If you convert a different architecture or a custom post-processing graph, the RKNN output decoder may need to be adapted.
+
 ## Stage 2 Required Class Set
 
 Minimum canonical classes:
