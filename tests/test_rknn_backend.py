@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
 import numpy as np
 
+from cds.detector.errors import BackendUnavailable
 from cds.detector.backends.rknn_backend import RKNNBackend
 from cds.detector.models.model_spec import ModelSpec
 
@@ -70,6 +72,85 @@ class RKNNBackendTests(unittest.TestCase):
         self.assertEqual(merged.shape, (1, 6, 2))
         self.assertAlmostEqual(float(merged[0, 4, 0]), 0.90, places=5)
         self.assertAlmostEqual(float(merged[0, 5, 1]), 0.80, places=5)
+
+    def test_infer_falls_back_and_locks_working_input_profile(self) -> None:
+        backend = RKNNBackend()
+        backend._runtime = object()
+        backend._model_spec = ModelSpec(
+            name="rknn-test",
+            model_path="model.rknn",
+            confidence=0.25,
+            nms=0.5,
+            imgsz=416,
+        )
+        backend._labels = ["cat", "dog"]
+        backend._input_height = 416
+        backend._input_width = 416
+        backend._input_format = "nhwc"
+        backend._input_candidates = [
+            (416, 416, "nhwc"),
+            (640, 640, "nhwc"),
+        ]
+
+        calls: list[tuple[int, int, str]] = []
+
+        def fake_preprocess(
+            frame: Any,
+            *,
+            input_h: int,
+            input_w: int,
+            input_format: str,
+        ) -> tuple[np.ndarray, tuple[int, int]]:
+            _ = frame
+            calls.append((input_h, input_w, input_format))
+            return np.zeros((1, input_h, input_w, 3), dtype=np.float32), (input_h, input_w)
+
+        def fake_run(input_tensor: np.ndarray, *, input_format: str) -> Any:
+            _ = input_tensor
+            if input_format != "nhwc":
+                return None
+            if calls[-1][0] == 416:
+                return None
+            return np.array([[[50.0], [60.0], [20.0], [10.0], [0.90], [0.10]]], dtype=np.float32)
+
+        backend._preprocess = fake_preprocess  # type: ignore[method-assign]
+        backend._run_rknn = fake_run  # type: ignore[method-assign]
+        backend._decode_outputs = (  # type: ignore[method-assign]
+            lambda *, raw_outputs, frame_shape, input_hw: ["ok"]
+        )
+
+        detections = backend.infer(np.zeros((100, 100, 3), dtype=np.uint8))
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(calls[:2], [(416, 416, "nhwc"), (640, 640, "nhwc")])
+        self.assertEqual(backend._input_candidates, [(640, 640, "nhwc")])
+        self.assertEqual((backend._input_height, backend._input_width, backend._input_format), (640, 640, "nhwc"))
+
+    def test_infer_raises_when_all_input_profiles_fail(self) -> None:
+        backend = RKNNBackend()
+        backend._runtime = object()
+        backend._model_spec = ModelSpec(
+            name="rknn-test",
+            model_path="model.rknn",
+            confidence=0.25,
+            nms=0.5,
+            imgsz=416,
+        )
+        backend._input_height = 416
+        backend._input_width = 416
+        backend._input_format = "nhwc"
+        backend._input_candidates = [(416, 416, "nhwc")]
+
+        backend._preprocess = (  # type: ignore[method-assign]
+            lambda frame, *, input_h, input_w, input_format: (
+                np.zeros((1, input_h, input_w, 3), dtype=np.float32),
+                (input_h, input_w),
+            )
+        )
+        backend._run_rknn = lambda input_tensor, *, input_format: None  # type: ignore[method-assign]
+
+        with self.assertRaises(BackendUnavailable):
+            backend.infer(np.zeros((10, 10, 3), dtype=np.uint8))
 
 
 if __name__ == "__main__":

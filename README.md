@@ -108,6 +108,7 @@ For RK3588 / Orange Pi style hosts:
 - `backend=auto` will only consider RKNN when the runtime host looks Rockchip-ready. The selector checks for `rknn_server`, `/dev/rknpu`, `/usr/lib/librknnrt.so`, or `/usr/lib64/librknnrt.so`.
 - If auto selection does not choose RKNN yet, force it explicitly with `--backend rknn`.
 - Some RKNN Toolkit2 / RKNNLite environments do not ship `librknnrt.so` in a standard system path. If runtime init fails with a missing dynamic library error, place `librknnrt.so` in `/usr/lib/` (or `/usr/lib64/`) on the device.
+- RKNN models are typically static-shape. Detect-time `--imgsz` does not change the compiled `.rknn` model input size; CDS now prefers the paired ONNX export shape (when present) and falls back across common RKNN input layouts until it finds one the runtime accepts.
 
 Example:
 
