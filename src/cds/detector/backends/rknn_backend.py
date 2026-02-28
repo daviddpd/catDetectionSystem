@@ -26,7 +26,8 @@ class RKNNBackend(DetectorBackend):
         self._input_height = 640
         self._input_width = 640
         self._input_format = "nhwc"
-        self._input_candidates: list[tuple[int, int, str]] = []
+        self._normalize_input = True
+        self._input_candidates: list[tuple[int, int, str, bool]] = []
         self._non_max_suppression = None
         self._scale_boxes = None
         self._output_stats_logged = False
@@ -61,6 +62,7 @@ class RKNNBackend(DetectorBackend):
         self._input_height = self._imgsz
         self._input_width = self._imgsz
         self._input_format = "nhwc"
+        self._normalize_input = True
         self._input_candidates = self._build_input_candidates(model_spec)
 
     def infer(self, frame: Any) -> list[Detection]:
@@ -68,54 +70,104 @@ class RKNNBackend(DetectorBackend):
             raise RuntimeError("Backend not loaded")
 
         errors: list[str] = []
+        best_empty_result: tuple[int, int, str, bool, float] | None = None
         candidates = (
-            [(self._input_height, self._input_width, self._input_format)]
+            [(self._input_height, self._input_width, self._input_format, self._normalize_input)]
             if len(self._input_candidates) <= 1
             else list(self._input_candidates)
         )
-        for input_h, input_w, input_format in candidates:
+        for input_h, input_w, input_format, normalize_input in candidates:
             input_tensor, input_hw = self._preprocess(
                 frame,
                 input_h=input_h,
                 input_w=input_w,
                 input_format=input_format,
+                normalize_input=normalize_input,
             )
             raw_outputs = self._run_rknn(input_tensor, input_format=input_format)
             if not self._raw_outputs_valid(raw_outputs):
                 errors.append(
-                    f"candidate={input_h}x{input_w}/{input_format} produced no usable outputs"
+                    "candidate="
+                    f"{input_h}x{input_w}/{input_format}/"
+                    f"{'norm' if normalize_input else 'raw'} produced no usable outputs"
                 )
                 continue
 
             try:
-                detections = self._decode_outputs(
-                    raw_outputs=raw_outputs,
+                merged = self._merge_outputs(raw_outputs)
+                nc = max(1, merged.shape[1] - 4)
+                score_max = self._class_score_max(merged, nc)
+                self._log_output_stats_once(merged, nc)
+                detections = self._decode_merged(
+                    merged=merged,
+                    nc=nc,
                     frame_shape=frame.shape[:2],
                     input_hw=input_hw,
                 )
             except ModelLoadError as exc:
                 errors.append(
-                    f"candidate={input_h}x{input_w}/{input_format} decode failed: {exc}"
+                    "candidate="
+                    f"{input_h}x{input_w}/{input_format}/"
+                    f"{'norm' if normalize_input else 'raw'} decode failed: {exc}"
                 )
+                continue
+
+            if not detections:
+                if best_empty_result is None or score_max > best_empty_result[4]:
+                    best_empty_result = (
+                        input_h,
+                        input_w,
+                        input_format,
+                        normalize_input,
+                        score_max,
+                    )
                 continue
 
             if (
                 input_h != self._input_height
                 or input_w != self._input_width
                 or input_format != self._input_format
+                or normalize_input != self._normalize_input
                 or len(self._input_candidates) != 1
             ):
                 self._input_height = input_h
                 self._input_width = input_w
                 self._input_format = input_format
-                self._input_candidates = [(input_h, input_w, input_format)]
+                self._normalize_input = normalize_input
+                self._input_candidates = [(input_h, input_w, input_format, normalize_input)]
                 self._logger.info(
-                    "rknn input profile locked height=%d width=%d format=%s",
+                    "rknn input profile locked height=%d width=%d format=%s scale=%s",
                     input_h,
                     input_w,
                     input_format,
+                    ("norm" if normalize_input else "raw"),
                 )
             return detections
+
+        if best_empty_result is not None:
+            input_h, input_w, input_format, normalize_input, score_max = best_empty_result
+            if (
+                input_h != self._input_height
+                or input_w != self._input_width
+                or input_format != self._input_format
+                or normalize_input != self._normalize_input
+                or len(self._input_candidates) != 1
+            ):
+                self._input_height = input_h
+                self._input_width = input_w
+                self._input_format = input_format
+                self._normalize_input = normalize_input
+                self._input_candidates = [(input_h, input_w, input_format, normalize_input)]
+                self._logger.info(
+                    "rknn input profile locked height=%d width=%d format=%s scale=%s max_cls=%.4f",
+                    input_h,
+                    input_w,
+                    input_format,
+                    ("norm" if normalize_input else "raw"),
+                    score_max,
+                )
+            self._log_confidence_hint_max(score_max)
+            return []
 
         raise BackendUnavailable(
             "RKNN inference failed for all candidate input layouts. "
@@ -178,10 +230,13 @@ class RKNNBackend(DetectorBackend):
         input_h: int,
         input_w: int,
         input_format: str,
+        normalize_input: bool,
     ) -> tuple[np.ndarray, tuple[int, int]]:
         image = self._letterbox(frame, input_h, input_w)
         image = image[..., ::-1]  # BGR -> RGB
-        image = image.astype(np.float32) / 255.0
+        image = image.astype(np.float32)
+        if normalize_input:
+            image /= 255.0
         if input_format == "nchw":
             image = np.transpose(image, (2, 0, 1))
             image = np.ascontiguousarray(image[None])
@@ -220,26 +275,37 @@ class RKNNBackend(DetectorBackend):
         arr = np.asarray(raw_outputs)
         return arr.ndim > 0 and arr.size > 0
 
-    def _build_input_candidates(self, model_spec: ModelSpec) -> list[tuple[int, int, str]]:
-        candidates: list[tuple[int, int, str]] = []
+    def _build_input_candidates(self, model_spec: ModelSpec) -> list[tuple[int, int, str, bool]]:
+        candidates: list[tuple[int, int, str, bool]] = []
 
-        def _add(h: int, w: int, fmt: str) -> None:
-            item = (max(32, int(h)), max(32, int(w)), fmt.lower())
+        def _add(h: int, w: int, fmt: str, normalize_input: bool) -> None:
+            item = (
+                max(32, int(h)),
+                max(32, int(w)),
+                fmt.lower(),
+                bool(normalize_input),
+            )
             if item not in candidates:
                 candidates.append(item)
 
         sidecar_hw = self._infer_input_hw_from_sidecar_onnx(model_spec)
         if sidecar_hw is not None:
             h, w = sidecar_hw
-            _add(h, w, "nhwc")
-            _add(h, w, "nchw")
+            _add(h, w, "nhwc", True)
+            _add(h, w, "nhwc", False)
+            _add(h, w, "nchw", True)
+            _add(h, w, "nchw", False)
 
-        _add(self._imgsz, self._imgsz, "nhwc")
-        _add(self._imgsz, self._imgsz, "nchw")
+        _add(self._imgsz, self._imgsz, "nhwc", True)
+        _add(self._imgsz, self._imgsz, "nhwc", False)
+        _add(self._imgsz, self._imgsz, "nchw", True)
+        _add(self._imgsz, self._imgsz, "nchw", False)
 
         if self._imgsz != 640:
-            _add(640, 640, "nhwc")
-            _add(640, 640, "nchw")
+            _add(640, 640, "nhwc", True)
+            _add(640, 640, "nhwc", False)
+            _add(640, 640, "nchw", True)
+            _add(640, 640, "nchw", False)
 
         return candidates
 
@@ -456,10 +522,18 @@ class RKNNBackend(DetectorBackend):
             merged = np.concatenate((merged, batch), axis=2)
         return merged
 
-    def _decode_outputs(
+    @staticmethod
+    def _class_score_max(merged: np.ndarray, nc: int) -> float:
+        if nc <= 0 or merged.shape[1] < 5:
+            return 0.0
+        cls = merged[:, 4 : 4 + nc, :]
+        return float(cls.max())
+
+    def _decode_merged(
         self,
         *,
-        raw_outputs: Any,
+        merged: np.ndarray,
+        nc: int,
         frame_shape: tuple[int, int],
         input_hw: tuple[int, int],
     ) -> list[Detection]:
@@ -467,10 +541,6 @@ class RKNNBackend(DetectorBackend):
             raise RuntimeError("Backend not loaded")
         if self._non_max_suppression is None or self._scale_boxes is None:
             raise RuntimeError("RKNN postprocess helpers not loaded")
-
-        merged = self._merge_outputs(raw_outputs)
-        nc = max(1, merged.shape[1] - 4)
-        self._log_output_stats_once(merged, nc)
 
         try:
             import torch
@@ -485,7 +555,6 @@ class RKNNBackend(DetectorBackend):
             nc=nc,
         )
         if not preds or preds[0].numel() == 0:
-            self._log_confidence_hint(merged, nc)
             return []
 
         det_tensor = preds[0].clone()
@@ -535,11 +604,9 @@ class RKNNBackend(DetectorBackend):
             self._model_spec.nms if self._model_spec is not None else -1.0,
         )
 
-    def _log_confidence_hint(self, merged: np.ndarray, nc: int) -> None:
-        if self._confidence_hint_logged or self._model_spec is None or nc <= 0:
+    def _log_confidence_hint_max(self, max_conf: float) -> None:
+        if self._confidence_hint_logged or self._model_spec is None:
             return
-        cls = merged[:, 4 : 4 + nc, :]
-        max_conf = float(cls.max())
         if max_conf < self._model_spec.confidence:
             self._confidence_hint_logged = True
             self._logger.warning(

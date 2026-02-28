@@ -43,8 +43,9 @@ class RKNNBackendTests(unittest.TestCase):
             dtype=np.float32,
         )
 
-        detections = backend._decode_outputs(
-            raw_outputs=[raw],
+        detections = backend._decode_merged(
+            merged=backend._merge_outputs([raw]),
+            nc=2,
             frame_shape=(100, 100),
             input_hw=(100, 100),
         )
@@ -105,12 +106,13 @@ class RKNNBackendTests(unittest.TestCase):
         backend._input_height = 416
         backend._input_width = 416
         backend._input_format = "nhwc"
+        backend._normalize_input = True
         backend._input_candidates = [
-            (416, 416, "nhwc"),
-            (640, 640, "nhwc"),
+            (416, 416, "nhwc", True),
+            (640, 640, "nhwc", False),
         ]
 
-        calls: list[tuple[int, int, str]] = []
+        calls: list[tuple[int, int, str, bool]] = []
 
         def fake_preprocess(
             frame: Any,
@@ -118,9 +120,10 @@ class RKNNBackendTests(unittest.TestCase):
             input_h: int,
             input_w: int,
             input_format: str,
+            normalize_input: bool,
         ) -> tuple[np.ndarray, tuple[int, int]]:
             _ = frame
-            calls.append((input_h, input_w, input_format))
+            calls.append((input_h, input_w, input_format, normalize_input))
             return np.zeros((1, input_h, input_w, 3), dtype=np.float32), (input_h, input_w)
 
         def fake_run(input_tensor: np.ndarray, *, input_format: str) -> Any:
@@ -133,16 +136,19 @@ class RKNNBackendTests(unittest.TestCase):
 
         backend._preprocess = fake_preprocess  # type: ignore[method-assign]
         backend._run_rknn = fake_run  # type: ignore[method-assign]
-        backend._decode_outputs = (  # type: ignore[method-assign]
-            lambda *, raw_outputs, frame_shape, input_hw: ["ok"]
+        backend._decode_merged = (  # type: ignore[method-assign]
+            lambda *, merged, nc, frame_shape, input_hw: ["ok"]
         )
 
         detections = backend.infer(np.zeros((100, 100, 3), dtype=np.uint8))
 
         self.assertEqual(len(detections), 1)
-        self.assertEqual(calls[:2], [(416, 416, "nhwc"), (640, 640, "nhwc")])
-        self.assertEqual(backend._input_candidates, [(640, 640, "nhwc")])
-        self.assertEqual((backend._input_height, backend._input_width, backend._input_format), (640, 640, "nhwc"))
+        self.assertEqual(calls[:2], [(416, 416, "nhwc", True), (640, 640, "nhwc", False)])
+        self.assertEqual(backend._input_candidates, [(640, 640, "nhwc", False)])
+        self.assertEqual(
+            (backend._input_height, backend._input_width, backend._input_format, backend._normalize_input),
+            (640, 640, "nhwc", False),
+        )
 
     def test_infer_raises_when_all_input_profiles_fail(self) -> None:
         backend = RKNNBackend()
@@ -157,10 +163,11 @@ class RKNNBackendTests(unittest.TestCase):
         backend._input_height = 416
         backend._input_width = 416
         backend._input_format = "nhwc"
-        backend._input_candidates = [(416, 416, "nhwc")]
+        backend._normalize_input = True
+        backend._input_candidates = [(416, 416, "nhwc", True)]
 
         backend._preprocess = (  # type: ignore[method-assign]
-            lambda frame, *, input_h, input_w, input_format: (
+            lambda frame, *, input_h, input_w, input_format, normalize_input: (
                 np.zeros((1, input_h, input_w, 3), dtype=np.float32),
                 (input_h, input_w),
             )
