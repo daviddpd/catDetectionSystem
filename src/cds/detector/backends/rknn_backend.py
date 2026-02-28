@@ -29,6 +29,8 @@ class RKNNBackend(DetectorBackend):
         self._input_candidates: list[tuple[int, int, str]] = []
         self._non_max_suppression = None
         self._scale_boxes = None
+        self._output_stats_logged = False
+        self._confidence_hint_logged = False
 
     def load(self, model_spec: ModelSpec) -> None:
         try:
@@ -468,6 +470,7 @@ class RKNNBackend(DetectorBackend):
 
         merged = self._merge_outputs(raw_outputs)
         nc = max(1, merged.shape[1] - 4)
+        self._log_output_stats_once(merged, nc)
 
         try:
             import torch
@@ -482,6 +485,7 @@ class RKNNBackend(DetectorBackend):
             nc=nc,
         )
         if not preds or preds[0].numel() == 0:
+            self._log_confidence_hint(merged, nc)
             return []
 
         det_tensor = preds[0].clone()
@@ -508,6 +512,41 @@ class RKNNBackend(DetectorBackend):
                 )
             )
         return detections
+
+    def _log_output_stats_once(self, merged: np.ndarray, nc: int) -> None:
+        if self._output_stats_logged:
+            return
+        self._output_stats_logged = True
+        if nc <= 0 or merged.shape[1] < 5:
+            self._logger.info("rknn output stats shape=%s nc=%d", tuple(merged.shape), nc)
+            return
+
+        cls = merged[:, 4 : 4 + nc, :]
+        flat = cls.reshape(-1)
+        top = sorted((float(v) for v in flat), reverse=True)[:5]
+        self._logger.info(
+            "rknn output stats shape=%s nc=%d cls_min=%.4f cls_max=%.4f cls_top5=%s conf=%.3f nms=%.3f",
+            tuple(merged.shape),
+            nc,
+            float(cls.min()),
+            float(cls.max()),
+            [round(v, 4) for v in top],
+            self._model_spec.confidence if self._model_spec is not None else -1.0,
+            self._model_spec.nms if self._model_spec is not None else -1.0,
+        )
+
+    def _log_confidence_hint(self, merged: np.ndarray, nc: int) -> None:
+        if self._confidence_hint_logged or self._model_spec is None or nc <= 0:
+            return
+        cls = merged[:, 4 : 4 + nc, :]
+        max_conf = float(cls.max())
+        if max_conf < self._model_spec.confidence:
+            self._confidence_hint_logged = True
+            self._logger.warning(
+                "rknn max class score %.4f is below confidence threshold %.4f; try lowering --confidence",
+                max_conf,
+                self._model_spec.confidence,
+            )
 
     def _label_for_class(self, cls_id: int) -> str:
         if 0 <= cls_id < len(self._labels):
