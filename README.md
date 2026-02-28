@@ -107,11 +107,13 @@ Run detect with CoreML:
 For RK3588 / Orange Pi style hosts:
 - `backend=auto` will only consider RKNN when the runtime host looks Rockchip-ready. The selector checks for `rknn_server`, `/dev/rknpu`, `/usr/lib/librknnrt.so`, or `/usr/lib64/librknnrt.so`.
 - If auto selection does not choose RKNN yet, force it explicitly with `--backend rknn`.
+- In this project, the RKNN "bundle" means the generated helper directory at `artifacts/models/<run-id>/rknn/`. It is the conversion package produced by `./cds export --targets rknn ...` and contains the scripts and templates used to build and validate `.rknn` artifacts (for example `convert_toolkit2.py`, `convert_toolkit2_vendor.py`, `calibration.txt`, `make_calibration_txt.py`, `smoke_test_rknn.py`, and `run_vendor_quant_smoke.sh`).
 - Some RKNN Toolkit2 / RKNNLite environments do not ship `librknnrt.so` in a standard system path. If runtime init fails with a missing dynamic library error, place `librknnrt.so` in `/usr/lib/` (or `/usr/lib64/`) on the device.
 - RKNN models are typically static-shape. Detect-time `--imgsz` does not change the compiled `.rknn` model input size; CDS now prefers the paired ONNX export shape (when present) and falls back across common RKNN input layouts until it finds one the runtime accepts.
 - Quantized RKNN exports should be generated with the current `./cds export` bundle. Older bundles omitted explicit `mean/std` preprocessing in `rknn.config(...)`, which can produce a model with live box channels but zeroed class channels on-device.
 - Confidence thresholds do not transfer cleanly across backends. A threshold that works on CoreML may be too strict or too noisy on RKNN; re-tune `--confidence` per exported artifact, especially when comparing quantized vs non-quantized RKNN builds.
 - `artifacts/models/<run-id>/rknn/make_calibration_txt.py` now supports model-assisted calibration set generation. You can run it on a Mac against local images with `--model-path .../exports/best.mlpackage --backend auto --min-confidence 0.90` to build a stronger `calibration.txt` before converting on the RKNN host.
+- The RKNN bundle now also includes `convert_toolkit2_vendor.py`, `smoke_test_rknn.py`, and `run_vendor_quant_smoke.sh` so you can do a vendor-style quantized conversion and a standalone RKNNLite smoke test on one still image before using `./cds detect`.
 
 Example:
 

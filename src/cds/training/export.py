@@ -63,11 +63,15 @@ def _write_rknn_conversion_bundle(onnx_path: Path, output_root: Path) -> dict[st
     rknn_dir.mkdir(parents=True, exist_ok=True)
 
     toolkit2_script = rknn_dir / "convert_toolkit2.py"
+    toolkit2_vendor_script = rknn_dir / "convert_toolkit2_vendor.py"
     legacy_script = rknn_dir / "convert_legacy.py"
     calibration_file = rknn_dir / "calibration.txt"
     calibration_helper = rknn_dir / "make_calibration_txt.py"
+    smoke_test_script = rknn_dir / "smoke_test_rknn.py"
+    one_shot_wrapper = rknn_dir / "run_vendor_quant_smoke.sh"
 
     toolkit2_output = rknn_dir / "model.toolkit2.rknn"
+    toolkit2_vendor_output = rknn_dir / "model.toolkit2.vendor.rknn"
     legacy_output = rknn_dir / "model.legacy.rknn"
 
     toolkit2_script.write_text(
@@ -147,6 +151,162 @@ assert rknn.build(
 assert rknn.export_rknn(OUTPUT_PATH) == 0
 rknn.release()
 print("Exported", OUTPUT_PATH)
+""",
+        encoding="utf-8",
+    )
+    toolkit2_vendor_script.write_text(
+        f"""#!/usr/bin/env python3
+from __future__ import annotations
+
+# Vendor-style Toolkit2 conversion wrapper for easy comparison testing.
+# This keeps the input contract explicit and matches the smoke test:
+# raw RGB uint8 image data, NHWC, batched.
+
+import argparse
+
+try:
+    from rknn.api import RKNN
+except ModuleNotFoundError as exc:
+    if exc.name == "pkg_resources":
+        try:
+            import setuptools
+            version = getattr(setuptools, "__version__", "installed")
+        except Exception:
+            version = None
+        version_note = f"setuptools {{version}} is installed, " if version else ""
+        raise SystemExit(
+            version_note
+            + "but pkg_resources is unavailable. "
+            + "RKNN Toolkit2 currently requires pkg_resources. "
+            + "Pin setuptools below 82 in this environment: "
+            + "python3 -m pip install 'setuptools<82'"
+        ) from exc
+    raise
+
+from pathlib import Path
+
+DEFAULT_ONNX_PATH = Path(r\"{onnx_path}\")
+DEFAULT_OUTPUT_PATH = Path(r\"{toolkit2_vendor_output}\")
+DEFAULT_CALIBRATION_DATASET = Path(__file__).with_name("calibration.txt")
+DEFAULT_TARGET_PLATFORM = "RK3588"
+
+
+def _csv_triplet(raw: str, name: str) -> list[int]:
+    parts = [item.strip() for item in str(raw).split(",")]
+    if len(parts) != 3:
+        raise SystemExit(f"Expected three comma-separated values for {{name}}, got: {{raw}}")
+    values: list[int] = []
+    for item in parts:
+        try:
+            values.append(int(item))
+        except Exception as exc:
+            raise SystemExit(f"Invalid integer in {{name}}={{raw}}") from exc
+    return values
+
+
+def _resolve_calibration_dataset(path: Path, do_quantization: bool) -> str | None:
+    if not do_quantization:
+        return None
+    if not path.exists():
+        raise SystemExit(
+            "Calibration dataset file not found: "
+            + str(path)
+            + ". Generate it with: "
+            + f"python3 {{Path(__file__).with_name('make_calibration_txt.py')}} /path/to/images"
+        )
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not lines:
+        raise SystemExit(
+            "Calibration dataset file is empty: "
+            + str(path)
+            + ". Add one absolute image path per line, or pass --no-quant."
+        )
+    return str(path)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Convert ONNX to RKNN using an explicit vendor-style Toolkit2 wrapper."
+    )
+    parser.add_argument(
+        "--onnx",
+        default=str(DEFAULT_ONNX_PATH),
+        help="Input ONNX model path (default: bundle ONNX)",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(DEFAULT_OUTPUT_PATH),
+        help="Output RKNN path (default: bundle-local model.toolkit2.vendor.rknn)",
+    )
+    parser.add_argument(
+        "--target",
+        default=DEFAULT_TARGET_PLATFORM,
+        help="Target platform, for example RK3588 (default: RK3588)",
+    )
+    parser.add_argument(
+        "--calibration",
+        default=str(DEFAULT_CALIBRATION_DATASET),
+        help="Calibration txt path (default: bundle-local calibration.txt)",
+    )
+    parser.add_argument(
+        "--mean",
+        default="0,0,0",
+        help="Mean values as r,g,b (default: 0,0,0)",
+    )
+    parser.add_argument(
+        "--std",
+        default="255,255,255",
+        help="Std values as r,g,b (default: 255,255,255)",
+    )
+    parser.add_argument(
+        "--no-quant",
+        action="store_true",
+        help="Skip quantization and export a floating-point RKNN model",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Reduce RKNN Toolkit2 verbosity",
+    )
+    args = parser.parse_args()
+
+    onnx_path = Path(args.onnx).expanduser().resolve()
+    if not onnx_path.exists():
+        raise SystemExit(f"ONNX model not found: {{onnx_path}}")
+
+    output_path = Path(args.output).expanduser().resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    calibration_path = Path(args.calibration).expanduser().resolve()
+    do_quantization = not bool(args.no_quant)
+    dataset = _resolve_calibration_dataset(calibration_path, do_quantization)
+    mean_values = [_csv_triplet(args.mean, "mean")]
+    std_values = [_csv_triplet(args.std, "std")]
+
+    rknn = RKNN(verbose=not args.quiet)
+    rknn.config(
+        target_platform=str(args.target),
+        mean_values=mean_values,
+        std_values=std_values,
+    )
+    assert rknn.load_onnx(model=str(onnx_path)) == 0
+    assert rknn.build(
+        do_quantization=do_quantization,
+        dataset=dataset,
+    ) == 0
+    assert rknn.export_rknn(str(output_path)) == 0
+    rknn.release()
+    print("Exported", output_path)
+    print("Expected runtime input: NHWC uint8 batched (raw RGB image data).")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 """,
         encoding="utf-8",
     )
@@ -563,6 +723,379 @@ if __name__ == "__main__":
 """,
         encoding="utf-8",
     )
+    smoke_test_script.write_text(
+        f"""#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+import numpy as np
+
+try:
+    import cv2
+except Exception as exc:
+    raise SystemExit("smoke_test_rknn.py requires opencv-python / cv2") from exc
+
+DEFAULT_RKNN_MODEL = Path(__file__).with_name("model.toolkit2.vendor.rknn")
+DEFAULT_ONNX_MODEL = Path(r\"{onnx_path}\")
+
+
+def _infer_hw_from_onnx(onnx_path: Path | None) -> tuple[int, int] | None:
+    if onnx_path is None or not onnx_path.exists():
+        return None
+    try:
+        import onnx
+    except Exception:
+        return None
+    try:
+        model = onnx.load(str(onnx_path))
+        if not model.graph.input:
+            return None
+        dims: list[int] = []
+        for dim in model.graph.input[0].type.tensor_type.shape.dim:
+            dims.append(int(dim.dim_value) if dim.dim_value else 0)
+        if len(dims) != 4:
+            return None
+        if dims[1] in {{1, 3, 4}} and dims[2] > 0 and dims[3] > 0:
+            return dims[2], dims[3]
+        if dims[3] in {{1, 3, 4}} and dims[1] > 0 and dims[2] > 0:
+            return dims[1], dims[2]
+    except Exception:
+        return None
+    return None
+
+
+def _parse_input_size(raw: str, onnx_path: Path | None) -> tuple[int, int]:
+    text = str(raw).strip().lower()
+    if text in {{"", "auto"}}:
+        inferred = _infer_hw_from_onnx(onnx_path)
+        if inferred is not None:
+            return inferred
+        return (640, 640)
+    parts = text.replace("x", " ").split()
+    if len(parts) != 2:
+        raise SystemExit(f"Invalid --input-size value: {{raw}}")
+    try:
+        height = max(32, int(parts[0]))
+        width = max(32, int(parts[1]))
+    except Exception as exc:
+        raise SystemExit(f"Invalid --input-size value: {{raw}}") from exc
+    return height, width
+
+
+def _letterbox(frame: np.ndarray, input_h: int, input_w: int) -> np.ndarray:
+    shape = frame.shape[:2]
+    gain = min(input_h / shape[0], input_w / shape[1])
+    new_unpad = (
+        int(round(shape[1] * gain)),
+        int(round(shape[0] * gain)),
+    )
+    dw = input_w - new_unpad[0]
+    dh = input_h - new_unpad[1]
+    dw /= 2.0
+    dh /= 2.0
+
+    if shape[::-1] != new_unpad:
+        frame = cv2.resize(frame, new_unpad, interpolation=cv2.INTER_LINEAR)
+
+    top = int(round(dh - 0.1))
+    bottom = int(round(dh + 0.1))
+    left = int(round(dw - 0.1))
+    right = int(round(dw + 0.1))
+    return cv2.copyMakeBorder(
+        frame,
+        top,
+        bottom,
+        left,
+        right,
+        cv2.BORDER_CONSTANT,
+        value=(114, 114, 114),
+    )
+
+
+def _preprocess_rknn(frame: np.ndarray, input_h: int, input_w: int, color: str) -> np.ndarray:
+    image = _letterbox(frame, input_h, input_w)
+    if color == "rgb":
+        image = image[..., ::-1]
+    image = np.ascontiguousarray(image.astype(np.uint8, copy=False)[None])
+    return image
+
+
+def _preprocess_onnx(frame: np.ndarray, input_h: int, input_w: int) -> np.ndarray:
+    image = _letterbox(frame, input_h, input_w)
+    image = image[..., ::-1].astype(np.float32)
+    image /= 255.0
+    image = np.transpose(image, (2, 0, 1))
+    return np.ascontiguousarray(image[None])
+
+
+def _flatten_outputs(raw_outputs: object) -> list[np.ndarray]:
+    if raw_outputs is None:
+        return []
+    if isinstance(raw_outputs, np.ndarray):
+        return [raw_outputs]
+    if isinstance(raw_outputs, (list, tuple)):
+        outputs: list[np.ndarray] = []
+        for item in raw_outputs:
+            if item is None:
+                continue
+            arr = np.asarray(item)
+            if arr.size == 0:
+                continue
+            outputs.append(arr)
+        return outputs
+    arr = np.asarray(raw_outputs)
+    return [arr] if arr.size else []
+
+
+def _sigmoid(values: np.ndarray) -> np.ndarray:
+    clipped = np.clip(values.astype(np.float32, copy=False), -60.0, 60.0)
+    return 1.0 / (1.0 + np.exp(-clipped))
+
+
+def _attribute_maxima(arr: np.ndarray, limit: int = 12) -> list[float]:
+    maxima: list[float] = []
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        attrs = min(limit, arr.shape[1])
+        for idx in range(attrs):
+            maxima.append(round(float(arr[:, idx : idx + 1, :].max()), 4))
+        return maxima
+    if arr.ndim == 4 and arr.shape[0] == 1:
+        if arr.shape[1] >= arr.shape[-1]:
+            attrs = min(limit, arr.shape[1])
+            for idx in range(attrs):
+                maxima.append(round(float(arr[:, idx : idx + 1, :, :].max()), 4))
+            return maxima
+        attrs = min(limit, arr.shape[-1])
+        for idx in range(attrs):
+            maxima.append(round(float(arr[:, :, :, idx : idx + 1].max()), 4))
+        return maxima
+    return maxima
+
+
+def _detect_head_summary(arr: np.ndarray) -> str:
+    if arr.ndim == 3 and arr.shape[0] == 1 and arr.shape[1] >= 5:
+        attrs = int(arr.shape[1])
+        nc = max(0, attrs - 4)
+        if nc <= 0:
+            return f"flat_head attrs={{attrs}}"
+        cls = arr[:, 4 : 4 + nc, :]
+        return (
+            f"flat_head attrs={{attrs}} nc={{nc}} "
+            f"cls_max_raw={{float(cls.max()):.4f}} "
+            f"cls_max_sigmoid={{float(_sigmoid(cls).max()):.4f}}"
+        )
+
+    if arr.ndim == 4 and arr.shape[0] == 1:
+        channel_first = arr.shape[1] >= arr.shape[-1]
+        channels = int(arr.shape[1] if channel_first else arr.shape[-1])
+        if channels % 3 != 0:
+            return f"4d_head channels={{channels}} (not divisible by 3)"
+        attrs = channels // 3
+        if attrs <= 5:
+            return f"4d_head channels={{channels}} attrs={{attrs}}"
+        nc = attrs - 5
+        if channel_first:
+            head = arr.reshape(1, 3, attrs, arr.shape[2], arr.shape[3])
+        else:
+            head = arr.reshape(1, arr.shape[1], arr.shape[2], 3, attrs).transpose(0, 3, 4, 1, 2)
+        obj = head[:, :, 4:5, :, :]
+        cls = head[:, :, 5:, :, :]
+        return (
+            f"yolo_head anchors=3 attrs={{attrs}} nc={{nc}} "
+            f"obj_max_raw={{float(obj.max()):.4f}} "
+            f"obj_max_sigmoid={{float(_sigmoid(obj).max()):.4f}} "
+            f"cls_max_raw={{float(cls.max()):.4f}} "
+            f"cls_max_sigmoid={{float(_sigmoid(cls).max()):.4f}}"
+        )
+
+    return "unclassified_head"
+
+
+def _print_output_stats(prefix: str, outputs: list[np.ndarray]) -> None:
+    if not outputs:
+        print(prefix + " no outputs")
+        return
+    for index, output in enumerate(outputs):
+        arr = np.asarray(output)
+        print(
+            prefix
+            + f" output[{{index}}] shape={{tuple(arr.shape)}} dtype={{arr.dtype}} "
+            + f"min={{float(arr.min()):.4f}} max={{float(arr.max()):.4f}} "
+            + f"attr_max={{_attribute_maxima(arr)}} "
+            + _detect_head_summary(arr)
+        )
+
+
+def _run_rknn(model_path: Path, tensor: np.ndarray) -> list[np.ndarray]:
+    try:
+        from rknnlite.api import RKNNLite
+    except Exception as exc:
+        raise SystemExit("rknnlite is required for RKNN smoke testing") from exc
+
+    runtime = RKNNLite()
+    if runtime.load_rknn(str(model_path)) != 0:
+        raise SystemExit(f"Failed to load RKNN model: {{model_path}}")
+    if runtime.init_runtime() != 0:
+        raise SystemExit("Failed to initialize RKNN runtime")
+
+    try:
+        try:
+            raw_outputs = runtime.inference(
+                inputs=[tensor],
+                data_type=["uint8"],
+                data_format=["nhwc"],
+            )
+        except TypeError:
+            try:
+                raw_outputs = runtime.inference(
+                    inputs=[tensor],
+                    data_format=["nhwc"],
+                )
+            except TypeError:
+                raw_outputs = runtime.inference(inputs=[tensor])
+        return _flatten_outputs(raw_outputs)
+    finally:
+        try:
+            runtime.release()
+        except Exception:
+            pass
+
+
+def _run_onnx(model_path: Path, tensor: np.ndarray) -> list[np.ndarray]:
+    try:
+        import onnxruntime as ort
+    except Exception:
+        print("onnxruntime not installed; skipping ONNX comparison")
+        return []
+
+    session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    input_name = session.get_inputs()[0].name
+    raw_outputs = session.run(None, {{input_name: tensor}})
+    return _flatten_outputs(raw_outputs)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Run a standalone RKNNLite smoke test and optional ONNX comparison on one image."
+    )
+    parser.add_argument("--image", required=True, help="Input image path")
+    parser.add_argument(
+        "--rknn-model",
+        default=str(DEFAULT_RKNN_MODEL),
+        help="RKNN model path (default: bundle-local model.toolkit2.vendor.rknn)",
+    )
+    parser.add_argument(
+        "--onnx-model",
+        default=str(DEFAULT_ONNX_MODEL),
+        help="Optional ONNX model path for comparison (default: bundle ONNX)",
+    )
+    parser.add_argument(
+        "--input-size",
+        default="auto",
+        help="Input size as HxW, or 'auto' to infer from ONNX (default: auto)",
+    )
+    parser.add_argument(
+        "--color",
+        choices=["rgb", "bgr"],
+        default="rgb",
+        help="Color order fed into RKNN (default: rgb)",
+    )
+    args = parser.parse_args()
+
+    image_path = Path(args.image).expanduser().resolve()
+    if not image_path.exists():
+        raise SystemExit(f"Image not found: {{image_path}}")
+    frame = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+    if frame is None:
+        raise SystemExit(f"Could not read image: {{image_path}}")
+
+    onnx_path = Path(args.onnx_model).expanduser().resolve() if args.onnx_model else None
+    input_h, input_w = _parse_input_size(args.input_size, onnx_path)
+    print(
+        f"smoke-test image={{image_path}} size={{frame.shape[1]}}x{{frame.shape[0]}} "
+        f"input={{input_w}}x{{input_h}} color={{args.color}}"
+    )
+
+    rknn_model = Path(args.rknn_model).expanduser().resolve()
+    if not rknn_model.exists():
+        raise SystemExit(f"RKNN model not found: {{rknn_model}}")
+    rknn_tensor = _preprocess_rknn(frame, input_h, input_w, args.color)
+    print(
+        f"rknn input shape={{tuple(rknn_tensor.shape)}} dtype={{rknn_tensor.dtype}} "
+        f"min={{int(rknn_tensor.min())}} max={{int(rknn_tensor.max())}}"
+    )
+    rknn_outputs = _run_rknn(rknn_model, rknn_tensor)
+    _print_output_stats("rknn", rknn_outputs)
+
+    if onnx_path is not None and onnx_path.exists():
+        onnx_tensor = _preprocess_onnx(frame, input_h, input_w)
+        print(
+            f"onnx input shape={{tuple(onnx_tensor.shape)}} dtype={{onnx_tensor.dtype}} "
+            f"min={{float(onnx_tensor.min()):.4f}} max={{float(onnx_tensor.max()):.4f}}"
+        )
+        onnx_outputs = _run_onnx(onnx_path, onnx_tensor)
+        _print_output_stats("onnx", onnx_outputs)
+    else:
+        print("onnx model not provided or not found; skipping ONNX comparison")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+""",
+        encoding="utf-8",
+    )
+    one_shot_wrapper.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "Usage: $0 [--skip-build] /path/to/image [additional smoke_test_rknn.py args...]" >&2
+  exit 64
+}
+
+SKIP_BUILD=0
+IMAGE=""
+EXTRA=()
+
+while (($#)); do
+  case "$1" in
+    --skip-build)
+      SKIP_BUILD=1
+      ;;
+    -h|--help)
+      usage
+      ;;
+    *)
+      if [[ -z "$IMAGE" ]]; then
+        IMAGE="$1"
+      else
+        EXTRA+=("$1")
+      fi
+      ;;
+  esac
+  shift
+done
+
+if [[ -z "$IMAGE" ]]; then
+  usage
+fi
+
+BUNDLE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if (( SKIP_BUILD == 0 )); then
+  python3 "$BUNDLE_DIR/convert_toolkit2_vendor.py"
+fi
+
+python3 "$BUNDLE_DIR/smoke_test_rknn.py" \
+  --image "$IMAGE" \
+  --rknn-model "$BUNDLE_DIR/model.toolkit2.vendor.rknn" \
+  "${EXTRA[@]}"
+""",
+        encoding="utf-8",
+    )
     calibration_file.write_text(
         "# One absolute image path per line for RKNN quantization calibration.\n"
         "# Generate with:\n"
@@ -571,8 +1104,11 @@ if __name__ == "__main__":
     )
 
     toolkit2_script.chmod(0o755)
+    toolkit2_vendor_script.chmod(0o755)
     legacy_script.chmod(0o755)
     calibration_helper.chmod(0o755)
+    smoke_test_script.chmod(0o755)
+    one_shot_wrapper.chmod(0o755)
 
     chip_notes = rknn_dir / "chip_families.txt"
     chip_notes.write_text(
@@ -586,9 +1122,12 @@ if __name__ == "__main__":
 
     return {
         "toolkit2_script": str(toolkit2_script),
+        "toolkit2_vendor_script": str(toolkit2_vendor_script),
         "legacy_script": str(legacy_script),
         "calibration_file": str(calibration_file),
         "calibration_helper": str(calibration_helper),
+        "smoke_test_script": str(smoke_test_script),
+        "one_shot_wrapper": str(one_shot_wrapper),
         "chip_notes": str(chip_notes),
     }
 

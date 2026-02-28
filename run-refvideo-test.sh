@@ -2,12 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-#MODEL="artifacts/models/communitycats-prod-20260217-213759/exports/best.mlpackage"
+MODEL="artifacts/models/communitycats-prod-20260217-213759/exports/best.mlpackage"
 
 
 
-MODEL="artifacts/models/communitycats-prod-20260225-065559/exports/best.mlpackage"
-if [ ! -f $MODEL ]; then
+#MODEL="artifacts/models/communitycats-prod-20260225-065559/exports/best.mlpackage"
+if [ ! -d $MODEL ]; then
     MODEL="artifacts/models/communitycats-prod-20260225-065559/ultralytics_train/weights/last.pt"
 fi
 
@@ -24,7 +24,7 @@ for video in $video_dir; do
     echo "$video"
     ./cds detect --uri $video \
     --model-path $MODEL \
-    --imgsz 320 --nms 0.5 \
+    --imgsz 416 --nms 0.5 \
     --confidence 0.6 \
     --benchmark  
 #         --confidence-min 0.50 \

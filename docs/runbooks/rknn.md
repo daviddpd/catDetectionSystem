@@ -34,9 +34,12 @@ Legacy toolkit family:
 
 Bundle output:
 - `artifacts/models/<run-id>/rknn/convert_toolkit2.py`
+- `artifacts/models/<run-id>/rknn/convert_toolkit2_vendor.py`
 - `artifacts/models/<run-id>/rknn/convert_legacy.py`
 - `artifacts/models/<run-id>/rknn/calibration.txt`
 - `artifacts/models/<run-id>/rknn/make_calibration_txt.py`
+- `artifacts/models/<run-id>/rknn/smoke_test_rknn.py`
+- `artifacts/models/<run-id>/rknn/run_vendor_quant_smoke.sh`
 - `artifacts/models/<run-id>/rknn/chip_families.txt`
 
 ## Calibration / Quantization Inputs
@@ -109,6 +112,42 @@ python3 -m pip install --force-reinstall 'setuptools<82'
 python3 artifacts/models/<run-id>/rknn/convert_toolkit2.py
 python3 artifacts/models/<run-id>/rknn/convert_legacy.py
 ```
+
+For vendor-style comparison testing, use the CLI-driven Toolkit2 wrapper instead:
+
+```bash
+python3 artifacts/models/<run-id>/rknn/convert_toolkit2_vendor.py \
+  --onnx artifacts/models/<run-id>/checkpoints/<model>.onnx \
+  --output artifacts/models/<run-id>/rknn/model.toolkit2.vendor.rknn \
+  --calibration artifacts/models/<run-id>/rknn/calibration.txt
+```
+
+That wrapper prints the expected runtime contract explicitly:
+- `NHWC`
+- `uint8`
+- batched `4D` input
+- raw `RGB` image bytes
+
+One-shot build + smoke test on the RKNN host:
+
+```bash
+./artifacts/models/<run-id>/rknn/run_vendor_quant_smoke.sh /path/to/test-image.jpg
+```
+
+Standalone smoke test only (use an existing `.rknn`):
+
+```bash
+python3 artifacts/models/<run-id>/rknn/smoke_test_rknn.py \
+  --image /path/to/test-image.jpg \
+  --rknn-model artifacts/models/<run-id>/rknn/model.toolkit2.vendor.rknn \
+  --onnx-model artifacts/models/<run-id>/checkpoints/<model>.onnx
+```
+
+The smoke test prints:
+- RKNN input shape/type
+- output tensor shapes
+- per-output attribute maxima
+- YOLO-style object/class maxima (raw and sigmoid) when it recognizes a detect head
 
 ## Troubleshooting
 - Missing RKNN package: install toolkit package matching chip family
