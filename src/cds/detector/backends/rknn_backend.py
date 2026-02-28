@@ -36,6 +36,7 @@ class RKNNBackend(DetectorBackend):
         self._output_stats_logged = False
         self._confidence_hint_logged = False
         self._candidate_scores_logged = False
+        self._split_merge_logged = False
 
     def load(self, model_spec: ModelSpec) -> None:
         try:
@@ -428,7 +429,6 @@ class RKNNBackend(DetectorBackend):
         def _add_variants(h: int, w: int, fmt: str) -> None:
             if fmt == "nhwc":
                 for swap_rb in (True, False):
-                    _add(h, w, fmt, False, swap_rb, "uint8", False)
                     _add(h, w, fmt, False, swap_rb, "uint8", True)
             for normalize_input in (True, False):
                 for swap_rb in (True, False):
@@ -639,6 +639,10 @@ class RKNNBackend(DetectorBackend):
         if self._labels:
             expected_attrs = 4 + len(self._labels)
 
+        split_merged = self._try_merge_split_outputs(outputs, expected_attrs)
+        if split_merged is not None:
+            return split_merged
+
         try:
             batches = [self._coerce_output_tensor(item, expected_attrs) for item in outputs]
         except ModelLoadError as exc:
@@ -692,6 +696,58 @@ class RKNNBackend(DetectorBackend):
                     f"{tuple(merged.shape)} vs {tuple(batch.shape)}"
                 )
             merged = np.concatenate((merged, batch), axis=2)
+        return merged
+
+    def _try_merge_split_outputs(
+        self,
+        outputs: list[Any],
+        expected_attrs: int | None,
+    ) -> np.ndarray | None:
+        if len(outputs) <= 1:
+            return None
+
+        raw_arrays = [np.asarray(item) for item in outputs]
+        if not raw_arrays or not all(arr.ndim == 3 for arr in raw_arrays):
+            return None
+
+        try:
+            batches = [self._coerce_output_tensor(item, None) for item in outputs]
+        except ModelLoadError:
+            return None
+
+        same_batch = all(batch.shape[0] == batches[0].shape[0] for batch in batches)
+        same_anchors = all(batch.shape[2] == batches[0].shape[2] for batch in batches)
+        total_attrs = sum(int(batch.shape[1]) for batch in batches)
+        if not (same_batch and same_anchors and total_attrs >= 5):
+            return None
+
+        channel_mismatch = len({int(batch.shape[1]) for batch in batches}) > 1
+        has_box_tensor = any(int(batch.shape[1]) == 4 for batch in batches)
+        if not (channel_mismatch and has_box_tensor):
+            return None
+
+        if expected_attrs is not None and total_attrs != expected_attrs:
+            inferred_classes = max(0, total_attrs - 4)
+            self._logger.warning(
+                "rknn split output attribute count mismatches labels expected_attrs=%d merged_attrs=%d labels=%d inferred_classes=%d",
+                expected_attrs,
+                total_attrs,
+                len(self._labels),
+                inferred_classes,
+            )
+
+        ordered = sorted(
+            batches,
+            key=lambda batch: (0 if int(batch.shape[1]) == 4 else 1),
+        )
+        merged = np.concatenate(tuple(ordered), axis=1)
+        if not self._split_merge_logged:
+            self._split_merge_logged = True
+            self._logger.info(
+                "rknn merged split output tensors along channel axis shapes=%s merged=%s",
+                [tuple(batch.shape) for batch in ordered],
+                tuple(merged.shape),
+            )
         return merged
 
     @staticmethod
@@ -833,3 +889,14 @@ class RKNNBackend(DetectorBackend):
 
     def device_info(self) -> str:
         return "npu"
+
+    def runtime_input_profile(self) -> dict[str, Any] | None:
+        return {
+            "height": int(self._input_height),
+            "width": int(self._input_width),
+            "format": self._input_format,
+            "dtype": self._input_dtype,
+            "batch": ("batched" if self._input_batched else "single"),
+            "scale": ("norm" if self._normalize_input else "raw"),
+            "color": ("rgb" if self._swap_rb else "bgr"),
+        }

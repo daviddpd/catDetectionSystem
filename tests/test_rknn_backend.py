@@ -110,6 +110,22 @@ class RKNNBackendTests(unittest.TestCase):
         self.assertAlmostEqual(float(merged[0, 4, 0]), 0.90, places=5)
         self.assertAlmostEqual(float(merged[0, 5, 0]), 0.10, places=5)
 
+    def test_merge_outputs_recombines_split_boxes_and_scores_without_warning(self) -> None:
+        backend = self._backend()
+        boxes = np.array(
+            [[[50.0], [60.0], [20.0], [10.0]]],
+            dtype=np.float32,
+        )
+        scores = np.array(
+            [[[0.90], [0.10]]],
+            dtype=np.float32,
+        )
+
+        with self.assertNoLogs("cds.detector.rknn", level="WARNING"):
+            merged = backend._merge_outputs([boxes, scores])
+
+        self.assertEqual(merged.shape, (1, 6, 1))
+
     def test_infer_falls_back_and_locks_working_input_profile(self) -> None:
         backend = RKNNBackend()
         backend._runtime = object()
@@ -130,7 +146,7 @@ class RKNNBackendTests(unittest.TestCase):
         backend._input_batched = True
         backend._input_candidates = [
             (416, 416, "nhwc", True, True, "float32", True),
-            (640, 640, "nhwc", False, False, "uint8", False),
+            (640, 640, "nhwc", False, False, "uint8", True),
         ]
 
         calls: list[tuple[int, int, str, bool, bool, str, bool]] = []
@@ -184,10 +200,10 @@ class RKNNBackendTests(unittest.TestCase):
             calls[:2],
             [
                 (416, 416, "nhwc", True, True, "float32", True),
-                (640, 640, "nhwc", False, False, "uint8", False),
+                (640, 640, "nhwc", False, False, "uint8", True),
             ],
         )
-        self.assertEqual(backend._input_candidates, [(640, 640, "nhwc", False, False, "uint8", False)])
+        self.assertEqual(backend._input_candidates, [(640, 640, "nhwc", False, False, "uint8", True)])
         self.assertEqual(
             (
                 backend._input_height,
@@ -198,7 +214,7 @@ class RKNNBackendTests(unittest.TestCase):
                 backend._input_dtype,
                 backend._input_batched,
             ),
-            (640, 640, "nhwc", False, False, "uint8", False),
+            (640, 640, "nhwc", False, False, "uint8", True),
         )
 
     def test_infer_raises_when_all_input_profiles_fail(self) -> None:

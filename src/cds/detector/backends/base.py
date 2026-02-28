@@ -27,3 +27,7 @@ class DetectorBackend(ABC):
     @abstractmethod
     def device_info(self) -> str:
         """Return selected device/accelerator detail string."""
+
+    def runtime_input_profile(self) -> dict[str, Any] | None:
+        """Return effective runtime input profile, if the backend can report it."""
+        return None

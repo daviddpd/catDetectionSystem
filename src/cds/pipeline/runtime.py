@@ -178,6 +178,7 @@ class DetectionRuntime:
         ingest_eof = threading.Event()
         infer_eof = threading.Event()
         source_shape_logged = threading.Event()
+        effective_input_logged = threading.Event()
 
         display_sink = None
         remote_sink = None
@@ -262,7 +263,7 @@ class DetectionRuntime:
         else:
             model_format = "unknown"
         self._logger.info(
-            "perf config model_path=%s model_format=%s imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s",
+            "perf config model_path=%s model_format=%s configured_imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s",
             model_path,
             model_format,
             self._config.model.imgsz,
@@ -403,6 +404,26 @@ class DetectionRuntime:
                     time.sleep(self._config.stress_sleep_ms / 1000.0)
 
                 detections = backend.infer(packet.frame)
+                if not effective_input_logged.is_set():
+                    profile_getter = getattr(backend, "runtime_input_profile", None)
+                    if callable(profile_getter):
+                        try:
+                            profile = profile_getter()
+                        except Exception:
+                            profile = None
+                        if profile:
+                            self._logger.info(
+                                "effective model input height=%s width=%s format=%s dtype=%s batch=%s scale=%s color=%s backend=%s",
+                                profile.get("height"),
+                                profile.get("width"),
+                                profile.get("format"),
+                                profile.get("dtype"),
+                                profile.get("batch"),
+                                profile.get("scale"),
+                                profile.get("color"),
+                                backend.name(),
+                            )
+                            effective_input_logged.set()
                 _attach_detection_area_metrics(packet.frame, detections)
                 metrics.mark_infer()
 
