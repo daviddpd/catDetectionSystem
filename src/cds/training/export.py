@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import platform
 import shutil
@@ -56,6 +57,99 @@ def _normalize_targets(raw_targets: str) -> list[str]:
     if not parts:
         return ["all"]
     return parts
+
+
+def _export_rknn_wrapper_onnx(yolo_model: Any, exports_dir: Path, imgsz: int) -> Path:
+    """Export an RKNN-oriented ONNX variant with boxes and scores split into separate outputs.
+
+    Ultralytics' standard ONNX export flattens decoded boxes and class scores into one
+    `(1, 4+nc, anchors)` tensor. That is convenient for general runtimes, but it mixes
+    large pixel-scale box values with small class scores in one output tensor, which
+    appears to quantize poorly for RKNN on some models. This wrapper keeps the decoded
+    boxes and class scores as separate outputs so RKNN quantizes them independently.
+    """
+
+    try:
+        import torch
+    except Exception as exc:
+        raise RuntimeError("RKNN export wrapper requires torch") from exc
+
+    try:
+        import onnx
+    except Exception as exc:
+        raise RuntimeError("RKNN export wrapper requires onnx") from exc
+
+    class _RKNNExportWrapper(torch.nn.Module):
+        def __init__(self, model: Any) -> None:
+            super().__init__()
+            self.model = model
+
+        def forward(self, images: Any) -> tuple[Any, Any]:
+            outputs = self.model(images)
+            if not isinstance(outputs, tuple) or len(outputs) != 2:
+                raise RuntimeError(
+                    "Unexpected Ultralytics forward output while building RKNN-specific ONNX export"
+                )
+            merged, _preds = outputs
+            if not isinstance(merged, torch.Tensor):
+                raise RuntimeError(
+                    "Ultralytics detect export wrapper expected a tensor prediction output"
+                )
+            if merged.ndim != 3 or int(merged.shape[1]) < 5:
+                raise RuntimeError(
+                    f"Ultralytics detect export wrapper expected shape (1,4+nc,N), got {tuple(merged.shape)}"
+                )
+            return merged[:, :4, :], merged[:, 4:, :]
+
+    export_model = copy.deepcopy(yolo_model.model).cpu().eval().float()
+    if hasattr(export_model, "fuse"):
+        export_model = export_model.fuse(verbose=False)
+
+    detect_head = getattr(export_model, "model", [None])[-1]
+    if detect_head is None or detect_head.__class__.__name__ != "Detect":
+        raise RuntimeError(
+            "RKNN-specific ONNX export currently supports Ultralytics Detect models only"
+        )
+
+    detect_head.export = False
+    detect_head.dynamic = False
+    detect_head.xyxy = False
+    if hasattr(detect_head, "shape"):
+        detect_head.shape = None
+
+    wrapper = _RKNNExportWrapper(export_model).eval()
+    export_size = max(32, int(imgsz))
+    sample = torch.zeros((1, 3, export_size, export_size), dtype=torch.float32)
+    artifact = (exports_dir / "best.rknn.onnx").resolve()
+
+    torch.onnx.export(
+        wrapper,
+        sample,
+        str(artifact),
+        export_params=True,
+        do_constant_folding=True,
+        opset_version=19,
+        input_names=["images"],
+        output_names=["boxes", "scores"],
+    )
+
+    model_onnx = onnx.load(str(artifact))
+    metadata = {
+        "names": str(getattr(export_model, "names", {}) or {}),
+        "imgsz": str([export_size, export_size]),
+        "stride": str(list(getattr(export_model, "stride", []))),
+        "task": "detect",
+        "cds_rknn_wrapper": "boxes_scores_split",
+        "cds_rknn_output_order": "boxes,scores",
+    }
+    for key, value in metadata.items():
+        meta = model_onnx.metadata_props.add()
+        meta.key = str(key)
+        meta.value = str(value)
+    if getattr(model_onnx, "ir_version", 0) > 10:
+        model_onnx.ir_version = 10
+    onnx.save(model_onnx, str(artifact))
+    return artifact
 
 
 def _write_rknn_conversion_bundle(onnx_path: Path, output_root: Path) -> dict[str, str]:
@@ -917,14 +1011,38 @@ def _print_output_stats(prefix: str, outputs: list[np.ndarray]) -> None:
     if not outputs:
         print(prefix + " no outputs")
         return
+    split_boxes_scores = (
+        len(outputs) == 2
+        and np.asarray(outputs[0]).ndim == 3
+        and np.asarray(outputs[1]).ndim == 3
+        and int(np.asarray(outputs[0]).shape[0]) == 1
+        and int(np.asarray(outputs[1]).shape[0]) == 1
+        and int(np.asarray(outputs[0]).shape[1]) == 4
+        and int(np.asarray(outputs[0]).shape[2]) == int(np.asarray(outputs[1]).shape[2])
+    )
     for index, output in enumerate(outputs):
         arr = np.asarray(output)
+        summary = _detect_head_summary(arr)
+        if split_boxes_scores and index == 0:
+            summary = (
+                f"split_boxes anchors={{int(arr.shape[2])}} "
+                f"x_max={{float(arr[:, 0:1, :].max()):.4f}} "
+                f"y_max={{float(arr[:, 1:2, :].max()):.4f}} "
+                f"w_max={{float(arr[:, 2:3, :].max()):.4f}} "
+                f"h_max={{float(arr[:, 3:4, :].max()):.4f}}"
+            )
+        elif split_boxes_scores and index == 1:
+            summary = (
+                f"split_scores nc={{int(arr.shape[1])}} "
+                f"cls_max_raw={{float(arr.max()):.4f}} "
+                f"cls_max_sigmoid={{float(_sigmoid(arr).max()):.4f}}"
+            )
         print(
             prefix
             + f" output[{{index}}] shape={{tuple(arr.shape)}} dtype={{arr.dtype}} "
             + f"min={{float(arr.min()):.4f}} max={{float(arr.max()):.4f}} "
             + f"attr_max={{_attribute_maxima(arr)}} "
-            + _detect_head_summary(arr)
+            + summary
         )
 
 
@@ -1204,7 +1322,7 @@ def export_model_artifacts(
             }
         )
 
-    need_ultralytics = any(t in target_list for t in ("onnx", "coreml", "tensorrt"))
+    need_ultralytics = any(t in target_list for t in ("onnx", "coreml", "tensorrt", "rknn"))
     yolo_model = None
     if need_ultralytics and source_is_pt:
         try:
@@ -1222,9 +1340,11 @@ def export_model_artifacts(
             )
 
     onnx_artifact: Path | None = None
+    rknn_onnx_artifact: Path | None = None
     if source_is_onnx:
         onnx_artifact = exports_dir / model_path.name
         shutil.copy2(model_path, onnx_artifact)
+        rknn_onnx_artifact = onnx_artifact
         report["results"].append(
             {
                 "target": "onnx",
@@ -1291,12 +1411,56 @@ def export_model_artifacts(
             continue
 
         if target == "rknn":
-            if onnx_artifact is None:
-                onnx_candidates = sorted(exports_dir.glob("*.onnx"))
-                if onnx_candidates:
-                    onnx_artifact = onnx_candidates[0]
+            if rknn_onnx_artifact is None and source_is_pt:
+                if yolo_model is None:
+                    report["results"].append(
+                        {
+                            "target": "rknn",
+                            "status": "skipped",
+                            "message": "ultralytics model unavailable for RKNN-specific ONNX export",
+                        }
+                    )
+                    continue
+                try:
+                    rknn_onnx_artifact = _export_rknn_wrapper_onnx(
+                        yolo_model=yolo_model,
+                        exports_dir=exports_dir,
+                        imgsz=imgsz,
+                    )
+                    report["results"].append(
+                        {
+                            "target": "rknn-onnx",
+                            "status": "ok",
+                            "artifact": str(rknn_onnx_artifact),
+                            "message": "Generated RKNN-specific ONNX export with split boxes/scores outputs",
+                        }
+                    )
+                except Exception as exc:
+                    report["results"].append(
+                        {
+                            "target": "rknn-onnx",
+                            "status": "error",
+                            "message": str(exc),
+                        }
+                    )
 
-            if onnx_artifact is None:
+            if rknn_onnx_artifact is None:
+                onnx_candidates = sorted(
+                    path
+                    for path in exports_dir.glob("*.onnx")
+                    if path.name.lower().endswith(".rknn.onnx")
+                )
+                if onnx_candidates:
+                    rknn_onnx_artifact = onnx_candidates[0]
+
+            if rknn_onnx_artifact is None:
+                if onnx_artifact is None:
+                    onnx_candidates = sorted(exports_dir.glob("*.onnx"))
+                    if onnx_candidates:
+                        onnx_artifact = onnx_candidates[0]
+                rknn_onnx_artifact = onnx_artifact
+
+            if rknn_onnx_artifact is None:
                 report["results"].append(
                     {
                         "target": "rknn",
@@ -1306,12 +1470,13 @@ def export_model_artifacts(
                 )
                 continue
 
-            bundle = _write_rknn_conversion_bundle(onnx_artifact, output_root)
+            bundle = _write_rknn_conversion_bundle(rknn_onnx_artifact, output_root)
             report["results"].append(
                 {
                     "target": "rknn",
                     "status": "ok",
                     "artifact": str(output_root / "rknn"),
+                    "onnx_artifact": str(rknn_onnx_artifact),
                     "bundle": bundle,
                     "message": "Generated RKNN conversion scripts, calibration template/helper, and chip-family notes",
                 }

@@ -32,6 +32,12 @@ Legacy toolkit family:
 ./cds export --model artifacts/models/<run-id>/checkpoints/best.pt --targets onnx,rknn --output-dir artifacts/models/<run-id>
 ```
 
+For PyTorch checkpoints, CDS now generates two ONNX artifacts:
+- `artifacts/models/<run-id>/exports/best.onnx`: the normal Ultralytics ONNX export used for general interoperability
+- `artifacts/models/<run-id>/exports/best.rknn.onnx`: an RKNN-specific ONNX export that splits decoded `boxes` and `scores` into separate outputs so RKNN quantizes them independently
+
+The RKNN bundle is built from `best.rknn.onnx` when it is available. Existing generic ONNX export behavior is unchanged.
+
 Bundle output:
 - `artifacts/models/<run-id>/rknn/convert_toolkit2.py`
 - `artifacts/models/<run-id>/rknn/convert_toolkit2_vendor.py`

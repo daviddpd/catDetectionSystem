@@ -540,9 +540,14 @@ class RKNNBackend(DetectorBackend):
             try:
                 report = json.loads(report_path.read_text(encoding="utf-8"))
                 for result in report.get("results", []):
-                    if result.get("target") != "onnx":
-                        continue
-                    artifact = result.get("artifact")
+                    target = str(result.get("target", ""))
+                    artifact = None
+                    if target == "onnx":
+                        artifact = result.get("artifact")
+                    elif target == "rknn-onnx":
+                        artifact = result.get("artifact")
+                    elif target == "rknn":
+                        artifact = result.get("onnx_artifact")
                     if artifact:
                         candidates.append(Path(str(artifact)).expanduser())
             except Exception:
@@ -551,6 +556,8 @@ class RKNNBackend(DetectorBackend):
         exports_dir = model_path.parent.parent / "exports"
         if exports_dir.exists():
             preferred = [
+                exports_dir / "best.rknn.onnx",
+                exports_dir / "model.rknn.onnx",
                 exports_dir / "best.onnx",
                 exports_dir / "model.onnx",
             ]
@@ -647,6 +654,31 @@ class RKNNBackend(DetectorBackend):
                 len(self._labels),
                 inferred_classes,
             )
+
+        # RKNN-specific ONNX export wrapper can split decoded boxes and class scores
+        # into separate tensors with identical anchor dimensions. Recombine them here
+        # before passing through shared NMS/postprocess.
+        if len(batches) > 1:
+            same_batch = all(batch.shape[0] == batches[0].shape[0] for batch in batches)
+            same_anchors = all(batch.shape[2] == batches[0].shape[2] for batch in batches)
+            total_attrs = sum(int(batch.shape[1]) for batch in batches)
+            if same_batch and same_anchors and total_attrs >= 5:
+                if expected_attrs is None or total_attrs == expected_attrs:
+                    channel_mismatch = len({int(batch.shape[1]) for batch in batches}) > 1
+                    has_box_tensor = any(int(batch.shape[1]) == 4 for batch in batches)
+                    if channel_mismatch and has_box_tensor:
+                        ordered = sorted(
+                            batches,
+                            key=lambda batch: (0 if int(batch.shape[1]) == 4 else 1),
+                        )
+                        merged = np.concatenate(tuple(ordered), axis=1)
+                        self._logger.info(
+                            "rknn merged split output tensors along channel axis shapes=%s merged=%s",
+                            [tuple(batch.shape) for batch in ordered],
+                            tuple(merged.shape),
+                        )
+                        return merged
+
         merged = batches[0]
         for batch in batches[1:]:
             if batch.shape[0] != merged.shape[0]:
