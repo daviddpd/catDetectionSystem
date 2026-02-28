@@ -28,7 +28,9 @@ class RKNNBackend(DetectorBackend):
         self._input_format = "nhwc"
         self._normalize_input = True
         self._swap_rb = True
-        self._input_candidates: list[tuple[int, int, str, bool, bool]] = []
+        self._input_dtype = "float32"
+        self._input_batched = True
+        self._input_candidates: list[tuple[int, int, str, bool, bool, str, bool]] = []
         self._non_max_suppression = None
         self._scale_boxes = None
         self._output_stats_logged = False
@@ -66,6 +68,8 @@ class RKNNBackend(DetectorBackend):
         self._input_format = "nhwc"
         self._normalize_input = True
         self._swap_rb = True
+        self._input_dtype = "float32"
+        self._input_batched = True
         self._input_candidates = self._build_input_candidates(model_spec)
 
     def infer(self, frame: Any) -> list[Detection]:
@@ -73,7 +77,7 @@ class RKNNBackend(DetectorBackend):
             raise RuntimeError("Backend not loaded")
 
         errors: list[str] = []
-        best_empty_result: tuple[int, int, str, bool, bool, float] | None = None
+        best_empty_result: tuple[int, int, str, bool, bool, str, bool, float] | None = None
         log_candidate_scores = not self._candidate_scores_logged
         candidates = (
             [
@@ -83,12 +87,22 @@ class RKNNBackend(DetectorBackend):
                     self._input_format,
                     self._normalize_input,
                     self._swap_rb,
+                    self._input_dtype,
+                    self._input_batched,
                 )
             ]
             if len(self._input_candidates) <= 1
             else list(self._input_candidates)
         )
-        for input_h, input_w, input_format, normalize_input, swap_rb in candidates:
+        for (
+            input_h,
+            input_w,
+            input_format,
+            normalize_input,
+            swap_rb,
+            input_dtype,
+            input_batched,
+        ) in candidates:
             input_tensor, input_hw = self._preprocess(
                 frame,
                 input_h=input_h,
@@ -96,14 +110,22 @@ class RKNNBackend(DetectorBackend):
                 input_format=input_format,
                 normalize_input=normalize_input,
                 swap_rb=swap_rb,
+                input_dtype=input_dtype,
+                input_batched=input_batched,
             )
-            raw_outputs = self._run_rknn(input_tensor, input_format=input_format)
+            raw_outputs = self._run_rknn(
+                input_tensor,
+                input_format=input_format,
+                input_dtype=input_dtype,
+            )
             if not self._raw_outputs_valid(raw_outputs):
                 errors.append(
                     "candidate="
                     f"{input_h}x{input_w}/{input_format}/"
                     f"{'norm' if normalize_input else 'raw'}/"
-                    f"{'rgb' if swap_rb else 'bgr'} produced no usable outputs"
+                    f"{'rgb' if swap_rb else 'bgr'}/"
+                    f"{input_dtype}/"
+                    f"{'batched' if input_batched else 'single'} produced no usable outputs"
                 )
                 continue
 
@@ -118,6 +140,8 @@ class RKNNBackend(DetectorBackend):
                         input_format=input_format,
                         normalize_input=normalize_input,
                         swap_rb=swap_rb,
+                        input_dtype=input_dtype,
+                        input_batched=input_batched,
                         score_max=score_max,
                     )
                 self._log_output_stats_once(merged, nc)
@@ -132,18 +156,22 @@ class RKNNBackend(DetectorBackend):
                     "candidate="
                     f"{input_h}x{input_w}/{input_format}/"
                     f"{'norm' if normalize_input else 'raw'}/"
-                    f"{'rgb' if swap_rb else 'bgr'} decode failed: {exc}"
+                    f"{'rgb' if swap_rb else 'bgr'}/"
+                    f"{input_dtype}/"
+                    f"{'batched' if input_batched else 'single'} decode failed: {exc}"
                 )
                 continue
 
             if not detections:
-                if best_empty_result is None or score_max >= best_empty_result[5]:
+                if best_empty_result is None or score_max > best_empty_result[7]:
                     best_empty_result = (
                         input_h,
                         input_w,
                         input_format,
                         normalize_input,
                         swap_rb,
+                        input_dtype,
+                        input_batched,
                         score_max,
                     )
                 continue
@@ -154,6 +182,8 @@ class RKNNBackend(DetectorBackend):
                 or input_format != self._input_format
                 or normalize_input != self._normalize_input
                 or swap_rb != self._swap_rb
+                or input_dtype != self._input_dtype
+                or input_batched != self._input_batched
                 or len(self._input_candidates) != 1
             ):
                 self._input_height = input_h
@@ -161,26 +191,51 @@ class RKNNBackend(DetectorBackend):
                 self._input_format = input_format
                 self._normalize_input = normalize_input
                 self._swap_rb = swap_rb
-                self._input_candidates = [(input_h, input_w, input_format, normalize_input, swap_rb)]
+                self._input_dtype = input_dtype
+                self._input_batched = input_batched
+                self._input_candidates = [
+                    (
+                        input_h,
+                        input_w,
+                        input_format,
+                        normalize_input,
+                        swap_rb,
+                        input_dtype,
+                        input_batched,
+                    )
+                ]
                 self._logger.info(
-                    "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s",
+                    "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s dtype=%s batch=%s",
                     input_h,
                     input_w,
                     input_format,
                     ("norm" if normalize_input else "raw"),
                     ("rgb" if swap_rb else "bgr"),
+                    input_dtype,
+                    ("batched" if input_batched else "single"),
                 )
             self._candidate_scores_logged = True
             return detections
 
         if best_empty_result is not None:
-            input_h, input_w, input_format, normalize_input, swap_rb, score_max = best_empty_result
+            (
+                input_h,
+                input_w,
+                input_format,
+                normalize_input,
+                swap_rb,
+                input_dtype,
+                input_batched,
+                score_max,
+            ) = best_empty_result
             if (
                 input_h != self._input_height
                 or input_w != self._input_width
                 or input_format != self._input_format
                 or normalize_input != self._normalize_input
                 or swap_rb != self._swap_rb
+                or input_dtype != self._input_dtype
+                or input_batched != self._input_batched
                 or len(self._input_candidates) != 1
             ):
                 self._input_height = input_h
@@ -188,14 +243,28 @@ class RKNNBackend(DetectorBackend):
                 self._input_format = input_format
                 self._normalize_input = normalize_input
                 self._swap_rb = swap_rb
-                self._input_candidates = [(input_h, input_w, input_format, normalize_input, swap_rb)]
+                self._input_dtype = input_dtype
+                self._input_batched = input_batched
+                self._input_candidates = [
+                    (
+                        input_h,
+                        input_w,
+                        input_format,
+                        normalize_input,
+                        swap_rb,
+                        input_dtype,
+                        input_batched,
+                    )
+                ]
                 self._logger.info(
-                    "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s max_cls=%.4f",
+                    "rknn input profile locked height=%d width=%d format=%s scale=%s color=%s dtype=%s batch=%s max_cls=%.4f",
                     input_h,
                     input_w,
                     input_format,
                     ("norm" if normalize_input else "raw"),
                     ("rgb" if swap_rb else "bgr"),
+                    input_dtype,
+                    ("batched" if input_batched else "single"),
                     score_max,
                 )
             self._candidate_scores_logged = True
@@ -266,31 +335,49 @@ class RKNNBackend(DetectorBackend):
         input_format: str,
         normalize_input: bool,
         swap_rb: bool,
+        input_dtype: str,
+        input_batched: bool,
     ) -> tuple[np.ndarray, tuple[int, int]]:
         image = self._letterbox(frame, input_h, input_w)
         if swap_rb:
             image = image[..., ::-1]  # BGR -> RGB
-        image = image.astype(np.float32)
-        if normalize_input:
-            image /= 255.0
+        if input_dtype == "uint8":
+            image = image.astype(np.uint8, copy=False)
+        else:
+            image = image.astype(np.float32)
+            if normalize_input:
+                image /= 255.0
         if input_format == "nchw":
             image = np.transpose(image, (2, 0, 1))
-            image = np.ascontiguousarray(image[None])
-            return image, (int(image.shape[2]), int(image.shape[3]))
+            if input_batched:
+                image = np.ascontiguousarray(image[None])
+                return image, (int(image.shape[2]), int(image.shape[3]))
+            image = np.ascontiguousarray(image)
+            return image, (int(image.shape[1]), int(image.shape[2]))
         if input_format != "nhwc":
             raise ModelLoadError(f"Unsupported RKNN input format: {input_format}")
-        image = np.ascontiguousarray(image[None])
-        return image, (int(image.shape[1]), int(image.shape[2]))
+        if input_batched:
+            image = np.ascontiguousarray(image[None])
+            return image, (int(image.shape[1]), int(image.shape[2]))
+        image = np.ascontiguousarray(image)
+        return image, (int(image.shape[0]), int(image.shape[1]))
 
-    def _run_rknn(self, input_tensor: np.ndarray, *, input_format: str) -> Any:
+    def _run_rknn(self, input_tensor: np.ndarray, *, input_format: str, input_dtype: str) -> Any:
         assert self._runtime is not None
         try:
             return self._runtime.inference(
                 inputs=[input_tensor],
                 data_format=[input_format],
+                data_type=[input_dtype],
             )
         except TypeError:
-            return self._runtime.inference(inputs=[input_tensor])
+            try:
+                return self._runtime.inference(
+                    inputs=[input_tensor],
+                    data_format=[input_format],
+                )
+            except TypeError:
+                return self._runtime.inference(inputs=[input_tensor])
 
     @staticmethod
     def _raw_outputs_valid(raw_outputs: Any) -> bool:
@@ -311,24 +398,41 @@ class RKNNBackend(DetectorBackend):
         arr = np.asarray(raw_outputs)
         return arr.ndim > 0 and arr.size > 0
 
-    def _build_input_candidates(self, model_spec: ModelSpec) -> list[tuple[int, int, str, bool, bool]]:
-        candidates: list[tuple[int, int, str, bool, bool]] = []
+    def _build_input_candidates(
+        self,
+        model_spec: ModelSpec,
+    ) -> list[tuple[int, int, str, bool, bool, str, bool]]:
+        candidates: list[tuple[int, int, str, bool, bool, str, bool]] = []
 
-        def _add(h: int, w: int, fmt: str, normalize_input: bool, swap_rb: bool) -> None:
+        def _add(
+            h: int,
+            w: int,
+            fmt: str,
+            normalize_input: bool,
+            swap_rb: bool,
+            input_dtype: str,
+            input_batched: bool,
+        ) -> None:
             item = (
                 max(32, int(h)),
                 max(32, int(w)),
                 fmt.lower(),
                 bool(normalize_input),
                 bool(swap_rb),
+                str(input_dtype).lower(),
+                bool(input_batched),
             )
             if item not in candidates:
                 candidates.append(item)
 
         def _add_variants(h: int, w: int, fmt: str) -> None:
+            if fmt == "nhwc":
+                for swap_rb in (True, False):
+                    _add(h, w, fmt, False, swap_rb, "uint8", False)
+                    _add(h, w, fmt, False, swap_rb, "uint8", True)
             for normalize_input in (True, False):
                 for swap_rb in (True, False):
-                    _add(h, w, fmt, normalize_input, swap_rb)
+                    _add(h, w, fmt, normalize_input, swap_rb, "float32", True)
 
         sidecar_hw = self._infer_input_hw_from_sidecar_onnx(model_spec)
         if sidecar_hw is not None:
@@ -649,15 +753,19 @@ class RKNNBackend(DetectorBackend):
         input_format: str,
         normalize_input: bool,
         swap_rb: bool,
+        input_dtype: str,
+        input_batched: bool,
         score_max: float,
     ) -> None:
         self._logger.info(
-            "rknn candidate height=%d width=%d format=%s scale=%s color=%s max_cls=%.4f",
+            "rknn candidate height=%d width=%d format=%s scale=%s color=%s dtype=%s batch=%s max_cls=%.4f",
             input_h,
             input_w,
             input_format,
             ("norm" if normalize_input else "raw"),
             ("rgb" if swap_rb else "bgr"),
+            input_dtype,
+            ("batched" if input_batched else "single"),
             score_max,
         )
 
