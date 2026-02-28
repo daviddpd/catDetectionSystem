@@ -44,6 +44,11 @@ class ExportTargetsTests(unittest.TestCase):
             helper_text = Path(bundle["calibration_helper"]).read_text(encoding="utf-8")
             calibration_text = Path(bundle["calibration_file"]).read_text(encoding="utf-8")
             self.assertIn("Build an RKNN calibration.txt file", helper_text)
+            self.assertIn("--model-path", helper_text)
+            self.assertIn("--use-bundle-model", helper_text)
+            self.assertIn("from cds.detector.selector import select_backend", helper_text)
+            self.assertIn("--min-confidence", helper_text)
+            self.assertIn("--coverage-per-label", helper_text)
             self.assertIn("One absolute image path per line", calibration_text)
 
 

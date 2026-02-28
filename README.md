@@ -111,6 +111,7 @@ For RK3588 / Orange Pi style hosts:
 - RKNN models are typically static-shape. Detect-time `--imgsz` does not change the compiled `.rknn` model input size; CDS now prefers the paired ONNX export shape (when present) and falls back across common RKNN input layouts until it finds one the runtime accepts.
 - Quantized RKNN exports should be generated with the current `./cds export` bundle. Older bundles omitted explicit `mean/std` preprocessing in `rknn.config(...)`, which can produce a model with live box channels but zeroed class channels on-device.
 - Confidence thresholds do not transfer cleanly across backends. A threshold that works on CoreML may be too strict or too noisy on RKNN; re-tune `--confidence` per exported artifact, especially when comparing quantized vs non-quantized RKNN builds.
+- `artifacts/models/<run-id>/rknn/make_calibration_txt.py` now supports model-assisted calibration set generation. You can run it on a Mac against local images with `--model-path .../exports/best.mlpackage --backend auto --min-confidence 0.90` to build a stronger `calibration.txt` before converting on the RKNN host.
 
 Example:
 

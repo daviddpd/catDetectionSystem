@@ -235,9 +235,39 @@ from __future__ import annotations
 
 import argparse
 import random
+import sys
+from collections import Counter
 from pathlib import Path
+from typing import Any
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+
+
+def _find_repo_root() -> Path | None:
+    here = Path(__file__).resolve()
+    for candidate in [here.parent, *here.parents]:
+        if (candidate / "src" / "cds").is_dir():
+            return candidate
+    return None
+
+
+def _default_model_path() -> str | None:
+    exports_dir = Path(__file__).resolve().parents[1] / "exports"
+    if not exports_dir.exists():
+        return None
+    for candidate in (
+        exports_dir / "best.mlpackage",
+        exports_dir / "best.mlmodel",
+        exports_dir / "best.pt",
+        exports_dir / "best.onnx",
+        exports_dir / "model.mlpackage",
+        exports_dir / "model.mlmodel",
+        exports_dir / "model.pt",
+        exports_dir / "model.onnx",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    return None
 
 
 def _iter_images(root: Path) -> list[Path]:
@@ -246,6 +276,129 @@ def _iter_images(root: Path) -> list[Path]:
         for path in root.rglob("*")
         if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
     )
+
+
+def _load_backend(
+    *,
+    model_path: str,
+    labels_path: str | None,
+    backend_name: str,
+    imgsz: int,
+    min_confidence: float,
+    nms: float,
+):
+    repo_root = _find_repo_root()
+    if repo_root is None:
+        raise SystemExit(
+            "Could not locate repository root containing src/cds. "
+            "Run this helper from the catDetectionSystem checkout."
+        )
+    src_root = repo_root / "src"
+    if str(src_root) not in sys.path:
+        sys.path.insert(0, str(src_root))
+
+    from cds.config.models import BackendPolicyConfig
+    from cds.detector.models.model_spec import ModelSpec
+    from cds.detector.selector import select_backend
+
+    model_spec = ModelSpec(
+        name="rknn-calibration",
+        model_path=str(Path(model_path).expanduser().resolve()),
+        labels_path=(
+            str(Path(labels_path).expanduser().resolve())
+            if labels_path
+            else None
+        ),
+        confidence=float(min_confidence),
+        nms=float(nms),
+        imgsz=max(32, int(imgsz)),
+    )
+    selection = select_backend(
+        model_spec,
+        BackendPolicyConfig(
+            requested=str(backend_name or "auto").strip().lower() or "auto",
+            allow_darknet_fallback=True,
+            allow_rknn=True,
+            allow_tensorrt=True,
+        ),
+    )
+    print(
+        "Using backend="
+        + selection.backend.name()
+        + " device="
+        + selection.backend.device_info()
+        + " reason="
+        + selection.reason
+    )
+    selection.backend.warmup()
+    return selection.backend, model_spec
+
+
+def _score_images(
+    images: list[Path],
+    detector: Any,
+) -> tuple[list[tuple[Path, float, tuple[str, ...], int]], int]:
+    import cv2
+
+    ranked: list[tuple[Path, float, tuple[str, ...], int]] = []
+    unreadable = 0
+    for index, image_path in enumerate(images, start=1):
+        frame = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+        if frame is None:
+            unreadable += 1
+            continue
+        detections = detector.infer(frame)
+        if not detections:
+            continue
+        best_confidence = max(float(det.confidence) for det in detections)
+        labels = tuple(sorted({str(det.label) for det in detections}))
+        ranked.append((image_path, best_confidence, labels, index))
+    return ranked, unreadable
+
+
+def _select_ranked(
+    ranked: list[tuple[Path, float, tuple[str, ...], int]],
+    *,
+    limit: int,
+    coverage_per_label: int,
+) -> list[Path]:
+    ordered = sorted(
+        ranked,
+        key=lambda item: (-item[1], -len(item[2]), item[3], str(item[0])),
+    )
+    if limit <= 0:
+        return [item[0] for item in ordered]
+
+    selected: list[Path] = []
+    used: set[Path] = set()
+    label_counts: dict[str, int] = {}
+    if coverage_per_label > 0:
+        for path, _score, labels, _index in ordered:
+            if path in used:
+                continue
+            needed = [
+                label
+                for label in labels
+                if label_counts.get(label, 0) < coverage_per_label
+            ]
+            if not needed:
+                continue
+            selected.append(path)
+            used.add(path)
+            for label in labels:
+                if label in needed:
+                    label_counts[label] = label_counts.get(label, 0) + 1
+            if len(selected) >= limit:
+                return selected
+
+    for path, _score, _labels, _index in ordered:
+        if path in used:
+            continue
+        selected.append(path)
+        used.add(path)
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def main() -> int:
@@ -270,6 +423,59 @@ def main() -> int:
         default=1337,
         help="Shuffle seed before truncation (default: 1337)",
     )
+    parser.add_argument(
+        "--model-path",
+        default=None,
+        help=(
+            "Optional model used to score images and keep only high-confidence positives "
+            "(default: disabled)"
+        ),
+    )
+    parser.add_argument(
+        "--use-bundle-model",
+        action="store_true",
+        help=(
+            "Auto-discover best.mlpackage/best.pt/best.onnx beside this bundle and use it "
+            "for model-assisted selection"
+        ),
+    )
+    parser.add_argument(
+        "--labels-path",
+        default=None,
+        help="Optional labels file passed to the detector backend",
+    )
+    parser.add_argument(
+        "--backend",
+        default="auto",
+        help="Detector backend policy for model-assisted mode (default: auto)",
+    )
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="Inference image size for model-assisted mode (default: 640)",
+    )
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=0.90,
+        help="Minimum detection confidence to include an image in model-assisted mode (default: 0.90)",
+    )
+    parser.add_argument(
+        "--nms",
+        type=float,
+        default=0.50,
+        help="NMS IoU threshold for model-assisted mode (default: 0.50)",
+    )
+    parser.add_argument(
+        "--coverage-per-label",
+        type=int,
+        default=1,
+        help=(
+            "When model-assisted mode is active, reserve up to this many top images per detected label "
+            "before filling remaining slots (0 disables, default: 1)"
+        ),
+    )
     args = parser.parse_args()
 
     source = Path(args.source).expanduser().resolve()
@@ -285,9 +491,62 @@ def main() -> int:
             + ", ".join(sorted(IMAGE_EXTENSIONS))
         )
 
-    rng = random.Random(args.seed)
-    rng.shuffle(images)
-    selected = images if args.limit <= 0 else images[: args.limit]
+    selected: list[Path]
+    model_path = args.model_path
+    if not model_path and args.use_bundle_model:
+        model_path = _default_model_path()
+        if not model_path:
+            raise SystemExit(
+                "No bundle-local model found under ./exports. "
+                "Pass --model-path explicitly or omit --use-bundle-model."
+            )
+
+    if model_path:
+        detector, _model_spec = _load_backend(
+            model_path=model_path,
+            labels_path=args.labels_path,
+            backend_name=args.backend,
+            imgsz=args.imgsz,
+            min_confidence=args.min_confidence,
+            nms=args.nms,
+        )
+        ranked, unreadable = _score_images(images, detector)
+        if not ranked:
+            raise SystemExit(
+                "No qualifying calibration images found after model scoring. "
+                "Lower --min-confidence, verify --model-path, or use --model-path '' "
+                "to fall back to random sampling."
+            )
+        selected = _select_ranked(
+            ranked,
+            limit=args.limit,
+            coverage_per_label=max(0, int(args.coverage_per_label)),
+        )
+        selected_meta = {
+            path: (score, labels)
+            for path, score, labels, _index in ranked
+        }
+        selected_labels = Counter(
+            label
+            for path in selected
+            for label in selected_meta.get(path, (0.0, tuple()))[1]
+        )
+        print(
+            "Scored "
+            + str(len(images))
+            + " images, unreadable="
+            + str(unreadable)
+            + ", qualifying="
+            + str(len(ranked))
+            + ", selected="
+            + str(len(selected))
+            + ", labels="
+            + str(dict(sorted(selected_labels.items())))
+        )
+    else:
+        rng = random.Random(args.seed)
+        rng.shuffle(images)
+        selected = images if args.limit <= 0 else images[: args.limit]
 
     output = Path(args.output).expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

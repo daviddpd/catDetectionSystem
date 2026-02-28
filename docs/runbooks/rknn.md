@@ -63,6 +63,27 @@ python3 artifacts/models/<run-id>/rknn/make_calibration_txt.py \
   --limit 200
 ```
 
+Model-assisted selection is now supported as a first-class workflow. This is useful when you want to build `calibration.txt` on a faster host (for example macOS with CoreML) and keep only strong positives from your own source images:
+
+```bash
+python3 artifacts/models/<run-id>/rknn/make_calibration_txt.py \
+  /path/to/calibration-images \
+  --output artifacts/models/<run-id>/rknn/calibration.txt \
+  --model-path artifacts/models/<run-id>/exports/best.mlpackage \
+  --labels-path dataset/classes.txt \
+  --backend auto \
+  --imgsz 640 \
+  --min-confidence 0.90 \
+  --coverage-per-label 1 \
+  --limit 1000
+```
+
+Notes:
+- `--model-path` enables headless scoring with the CDS detector stack. `--backend auto` will choose the best supported backend on that host (for example CoreML on Apple Silicon for `.mlpackage` artifacts).
+- `--use-bundle-model` is a convenience flag that auto-discovers `best.mlpackage`, `best.pt`, or `best.onnx` under the sibling `exports/` directory.
+- `--coverage-per-label 1` biases selection toward at least one strong image per detected label before filling the remaining slots by score.
+- Omit `--model-path` (and `--use-bundle-model`) to keep the original random-sampling behavior.
+
 You can also write it manually:
 - one absolute image path per line
 - blank lines and `#` comment lines are ignored
