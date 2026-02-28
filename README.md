@@ -109,6 +109,8 @@ For RK3588 / Orange Pi style hosts:
 - If auto selection does not choose RKNN yet, force it explicitly with `--backend rknn`.
 - Some RKNN Toolkit2 / RKNNLite environments do not ship `librknnrt.so` in a standard system path. If runtime init fails with a missing dynamic library error, place `librknnrt.so` in `/usr/lib/` (or `/usr/lib64/`) on the device.
 - RKNN models are typically static-shape. Detect-time `--imgsz` does not change the compiled `.rknn` model input size; CDS now prefers the paired ONNX export shape (when present) and falls back across common RKNN input layouts until it finds one the runtime accepts.
+- Quantized RKNN exports should be generated with the current `./cds export` bundle. Older bundles omitted explicit `mean/std` preprocessing in `rknn.config(...)`, which can produce a model with live box channels but zeroed class channels on-device.
+- Confidence thresholds do not transfer cleanly across backends. A threshold that works on CoreML may be too strict or too noisy on RKNN; re-tune `--confidence` per exported artifact, especially when comparing quantized vs non-quantized RKNN builds.
 
 Example:
 

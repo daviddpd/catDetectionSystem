@@ -46,6 +46,12 @@ Prepare a calibration file containing representative image paths:
 - 100-1000 images recommended for stable quantization
 - include day/night and weather variance
 
+The generated conversion scripts set explicit preprocessing:
+- `mean_values=[[0, 0, 0]]`
+- `std_values=[[255, 255, 255]]`
+
+That matches CDS runtime preprocessing (`RGB / 255.0`). Older generated bundles omitted this and can produce quantized RKNN models with live boxes but dead class scores (`cls_max=0.0`).
+
 The generated scripts now look for `calibration.txt` in the same directory as the script, not the current shell directory.
 
 Generate it from a directory of images:
@@ -62,6 +68,8 @@ You can also write it manually:
 - blank lines and `#` comment lines are ignored
 
 If you want a quick functional conversion without quantization, edit the generated conversion script and set `DO_QUANTIZATION = False`.
+
+Use that as a sanity check only. Confidence thresholds are backend- and artifact-specific, so a non-quantized RKNN build may need a different `--confidence` than the CoreML or PyTorch export of the same training run.
 
 ## Artifact Naming Convention
 
@@ -87,4 +95,6 @@ python3 artifacts/models/<run-id>/rknn/convert_legacy.py
 - `rknnlite` installed but conversion still fails: `rknnlite` is runtime-only; ONNX -> `.rknn` conversion requires `rknn-toolkit2`
 - Build errors from unsupported ONNX ops: simplify model, re-export ONNX, or use a smaller checkpoint
 - Quantization instability: improve calibration coverage and image quality
+- Quantized model runs but reports boxes with zero class scores: regenerate the RKNN bundle with the latest `./cds export` and rebuild. Older templates omitted explicit `mean/std` preprocessing in `rknn.config(...)`, which can collapse class channels during quantization.
+- Non-quantized model detects but seems noisy: that is a threshold calibration issue, not a decode bug by itself. Re-tune `--confidence` for the RKNN artifact instead of copying the CoreML threshold directly.
 - Runtime mismatch: ensure generated RKNN artifact matches NPU generation and runtime version

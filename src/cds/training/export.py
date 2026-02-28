@@ -76,6 +76,8 @@ from __future__ import annotations
 
 # Toolkit2 conversion template. Run on an RKNN Toolkit2-capable host.
 # Update target_platform and dataset calibration file before execution.
+# The default mean/std settings below match CDS runtime preprocessing
+# (RGB float32 normalized to 0..1 before inference).
 
 try:
     from rknn.api import RKNN
@@ -101,6 +103,8 @@ from pathlib import Path
 ONNX_PATH = r\"{onnx_path}\"
 OUTPUT_PATH = r\"{toolkit2_output}\"
 TARGET_PLATFORM = "RK3588"
+MEAN_VALUES = [[0, 0, 0]]
+STD_VALUES = [[255, 255, 255]]
 DO_QUANTIZATION = True
 CALIBRATION_DATASET = Path(__file__).with_name("calibration.txt")
 
@@ -130,7 +134,11 @@ def _resolve_calibration_dataset() -> str | None:
     return str(CALIBRATION_DATASET)
 
 rknn = RKNN(verbose=True)
-rknn.config(target_platform=TARGET_PLATFORM)
+rknn.config(
+    target_platform=TARGET_PLATFORM,
+    mean_values=MEAN_VALUES,
+    std_values=STD_VALUES,
+)
 assert rknn.load_onnx(model=ONNX_PATH) == 0
 assert rknn.build(
     do_quantization=DO_QUANTIZATION,
@@ -147,6 +155,8 @@ print("Exported", OUTPUT_PATH)
 from __future__ import annotations
 
 # Legacy RKNN toolkit conversion template. Run on legacy-compatible host.
+# The default mean/std settings below match CDS runtime preprocessing
+# (RGB float32 normalized to 0..1 before inference).
 
 try:
     from rknn.api import RKNN
@@ -172,6 +182,8 @@ from pathlib import Path
 ONNX_PATH = r\"{onnx_path}\"
 OUTPUT_PATH = r\"{legacy_output}\"
 TARGET_PLATFORM = "RK1808"
+MEAN_VALUES = [[0, 0, 0]]
+STD_VALUES = [[255, 255, 255]]
 DO_QUANTIZATION = True
 CALIBRATION_DATASET = Path(__file__).with_name("calibration.txt")
 
@@ -201,7 +213,11 @@ def _resolve_calibration_dataset() -> str | None:
     return str(CALIBRATION_DATASET)
 
 rknn = RKNN(verbose=True)
-rknn.config(target_platform=TARGET_PLATFORM)
+rknn.config(
+    target_platform=TARGET_PLATFORM,
+    mean_values=MEAN_VALUES,
+    std_values=STD_VALUES,
+)
 assert rknn.load_onnx(model=ONNX_PATH) == 0
 assert rknn.build(
     do_quantization=DO_QUANTIZATION,
