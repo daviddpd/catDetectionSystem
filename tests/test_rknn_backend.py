@@ -73,6 +73,24 @@ class RKNNBackendTests(unittest.TestCase):
         self.assertAlmostEqual(float(merged[0, 4, 0]), 0.90, places=5)
         self.assertAlmostEqual(float(merged[0, 5, 1]), 0.80, places=5)
 
+    def test_merge_outputs_falls_back_when_label_count_mismatches(self) -> None:
+        backend = self._backend()
+        backend._labels = [
+            "opossum",
+            "skunk",
+            "raccoon",
+            "cat-olive",
+            "cat-bean",
+            "cat-domino",
+            "cat",
+            "dog",
+        ]
+        raw = np.zeros((1, 9, 8400), dtype=np.float32)
+
+        merged = backend._merge_outputs([raw])
+
+        self.assertEqual(merged.shape, (1, 9, 8400))
+
     def test_infer_falls_back_and_locks_working_input_profile(self) -> None:
         backend = RKNNBackend()
         backend._runtime = object()

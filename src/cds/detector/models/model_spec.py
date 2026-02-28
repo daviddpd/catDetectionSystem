@@ -22,4 +22,10 @@ class ModelSpec:
         path = Path(self.labels_path)
         if not path.exists():
             return []
-        return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        labels: list[str] = []
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            labels.append(line)
+        return labels

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from pathlib import Path
@@ -53,7 +54,7 @@ class RKNNBackend(DetectorBackend):
 
         self._runtime = runtime
         self._model_spec = model_spec
-        self._labels = model_spec.read_labels()
+        self._labels = self._resolve_labels(model_spec)
         self._imgsz = max(32, int(model_spec.imgsz))
         self._input_height = self._imgsz
         self._input_width = self._imgsz
@@ -240,6 +241,55 @@ class RKNNBackend(DetectorBackend):
 
         return candidates
 
+    def _resolve_labels(self, model_spec: ModelSpec) -> list[str]:
+        file_labels = model_spec.read_labels()
+        sidecar_labels = self._infer_labels_from_sidecar_onnx(model_spec)
+        if sidecar_labels:
+            if file_labels and file_labels != sidecar_labels:
+                self._logger.info(
+                    "rknn labels overridden from paired onnx metadata file_labels=%d onnx_labels=%d",
+                    len(file_labels),
+                    len(sidecar_labels),
+                )
+            return sidecar_labels
+        return file_labels
+
+    def _infer_labels_from_sidecar_onnx(self, model_spec: ModelSpec) -> list[str]:
+        onnx_path = self._find_sidecar_onnx_path(model_spec)
+        if onnx_path is None:
+            return []
+        try:
+            import onnx
+        except Exception:
+            return []
+
+        try:
+            model = onnx.load(str(onnx_path))
+        except Exception:
+            return []
+
+        for prop in model.metadata_props:
+            if prop.key != "names":
+                continue
+            try:
+                parsed = ast.literal_eval(prop.value)
+            except Exception:
+                return []
+            if isinstance(parsed, dict):
+                items: list[tuple[int, str]] = []
+                for key, value in parsed.items():
+                    try:
+                        idx = int(key)
+                    except Exception:
+                        continue
+                    items.append((idx, str(value)))
+                items.sort(key=lambda item: item[0])
+                return [value for _, value in items]
+            if isinstance(parsed, (list, tuple)):
+                return [str(item) for item in parsed]
+            return []
+        return []
+
     def _infer_input_hw_from_sidecar_onnx(self, model_spec: ModelSpec) -> tuple[int, int] | None:
         onnx_path = self._find_sidecar_onnx_path(model_spec)
         if onnx_path is None:
@@ -374,7 +424,21 @@ class RKNNBackend(DetectorBackend):
         if self._labels:
             expected_attrs = 4 + len(self._labels)
 
-        batches = [self._coerce_output_tensor(item, expected_attrs) for item in outputs]
+        try:
+            batches = [self._coerce_output_tensor(item, expected_attrs) for item in outputs]
+        except ModelLoadError as exc:
+            if expected_attrs is None or "attribute dimension mismatch" not in str(exc):
+                raise
+            batches = [self._coerce_output_tensor(item, None) for item in outputs]
+            inferred_attrs = batches[0].shape[1]
+            inferred_classes = max(0, inferred_attrs - 4)
+            self._logger.warning(
+                "rknn output attribute count mismatches labels expected_attrs=%d inferred_attrs=%d labels=%d inferred_classes=%d",
+                expected_attrs,
+                inferred_attrs,
+                len(self._labels),
+                inferred_classes,
+            )
         merged = batches[0]
         for batch in batches[1:]:
             if batch.shape[0] != merged.shape[0]:
