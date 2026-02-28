@@ -94,7 +94,7 @@ class RKNNBackend(DetectorBackend):
             if len(self._input_candidates) <= 1
             else list(self._input_candidates)
         )
-        for tier_candidates in self._group_candidates_by_probe_tier(candidates):
+        for family_candidates in self._group_candidates_by_probe_family(candidates):
             best_empty_result: tuple[int, int, str, bool, bool, str, bool, float] | None = None
             best_detection_result: tuple[
                 int,
@@ -116,7 +116,7 @@ class RKNNBackend(DetectorBackend):
                 swap_rb,
                 input_dtype,
                 input_batched,
-            ) in tier_candidates:
+            ) in family_candidates:
                 input_tensor, input_hw = self._preprocess(
                     frame,
                     input_h=input_h,
@@ -440,15 +440,40 @@ class RKNNBackend(DetectorBackend):
             return 2
         return 3
 
-    def _group_candidates_by_probe_tier(
+    def _group_candidates_by_probe_family(
         self,
         candidates: list[tuple[int, int, str, bool, bool, str, bool]],
     ) -> list[list[tuple[int, int, str, bool, bool, str, bool]]]:
-        grouped: dict[int, list[tuple[int, int, str, bool, bool, str, bool]]] = {}
+        grouped: dict[
+            tuple[int, int, str, bool, str, bool],
+            list[tuple[int, int, str, bool, bool, str, bool]],
+        ] = {}
+        group_order: list[tuple[int, int, str, bool, str, bool]] = []
+        group_index: dict[tuple[int, int, str, bool, str, bool], int] = {}
+
         for candidate in candidates:
-            tier = self._candidate_probe_tier(candidate)
-            grouped.setdefault(tier, []).append(candidate)
-        return [grouped[tier] for tier in sorted(grouped)]
+            family = (
+                int(candidate[0]),
+                int(candidate[1]),
+                str(candidate[2]),
+                bool(candidate[3]),
+                str(candidate[5]),
+                bool(candidate[6]),
+            )
+            if family not in grouped:
+                grouped[family] = []
+                group_index[family] = len(group_order)
+                group_order.append(family)
+            grouped[family].append(candidate)
+
+        ordered = sorted(
+            group_order,
+            key=lambda family: (
+                self._candidate_probe_tier(grouped[family][0]),
+                group_index[family],
+            ),
+        )
+        return [grouped[family] for family in ordered]
 
     def _lock_input_profile(
         self,

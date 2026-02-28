@@ -267,10 +267,11 @@ class RKNNBackendTests(unittest.TestCase):
         backend._input_candidates = [
             (640, 640, "nhwc", False, True, "uint8", True),
             (640, 640, "nhwc", False, False, "uint8", True),
+            (416, 416, "nhwc", False, True, "uint8", True),
             (640, 640, "nhwc", True, True, "float32", True),
         ]
 
-        calls: list[tuple[str, bool]] = []
+        calls: list[tuple[int, str, bool]] = []
 
         def fake_preprocess(
             frame: Any,
@@ -289,7 +290,7 @@ class RKNNBackendTests(unittest.TestCase):
             _ = input_format
             _ = normalize_input
             _ = input_batched
-            calls.append((input_dtype, swap_rb))
+            calls.append((input_h, input_dtype, swap_rb))
             dtype = np.uint8 if input_dtype == "uint8" else np.float32
             return np.zeros((1, 640, 640, 3), dtype=dtype), (640, 640)
 
@@ -298,7 +299,9 @@ class RKNNBackendTests(unittest.TestCase):
             _ = input_format
             if input_dtype == "float32":
                 raise AssertionError("float32 tier should not be probed after valid uint8 tier")
-            if calls[-1][1]:
+            if calls[-1][0] == 416:
+                raise AssertionError("416x416 fallback should not be probed after valid 640x640 family")
+            if calls[-1][2]:
                 return np.array(
                     [[[50.0], [60.0], [20.0], [10.0], [0.70], [0.10]]],
                     dtype=np.float32,
@@ -320,8 +323,8 @@ class RKNNBackendTests(unittest.TestCase):
         self.assertEqual(
             calls,
             [
-                ("uint8", True),
-                ("uint8", False),
+                (640, "uint8", True),
+                (640, "uint8", False),
             ],
         )
         self.assertEqual(backend._input_candidates, [(640, 640, "nhwc", False, True, "uint8", True)])
