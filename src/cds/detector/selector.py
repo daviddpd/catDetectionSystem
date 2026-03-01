@@ -56,6 +56,21 @@ def _ultralytics_available() -> bool:
         return False
 
 
+def _prime_ultralytics_for_rknn() -> None:
+    """Mirror the auto-selection import order for RKNN.
+
+    On some Rockchip hosts, importing top-level ultralytics before rknnlite
+    avoids helper import failures inside the RKNN backend. If the import still
+    fails, the RKNN backend will surface the precise postprocess error later.
+    """
+    try:
+        import ultralytics
+
+        _ = ultralytics.__version__
+    except Exception:
+        return
+
+
 def _is_apple_silicon() -> bool:
     return platform.system().lower() == "darwin" and platform.machine().lower() in {
         "arm64",
@@ -203,6 +218,7 @@ def select_backend(
             )
 
         if requested == "rknn":
+            _prime_ultralytics_for_rknn()
             return _choose_with_fallback(
                 [(lambda: _new_rknn_backend(), "Requested RKNN backend")],
                 model_spec,
