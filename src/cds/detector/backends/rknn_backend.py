@@ -264,7 +264,6 @@ class RKNNBackend(DetectorBackend):
         preload_error: Exception | None = None
 
         try:
-            import torch  # noqa: F401
             import ultralytics  # noqa: F401
         except Exception as exc:
             preload_error = exc
