@@ -9,7 +9,7 @@ usage() {
 Usage:
   tools/rknn_benchmark_matrix.sh \
     --uri <video-or-rtsp> \
-    --model-640 <path> \
+    [--model-640 <path>] \
     [--model-320 <path>] \
     [--labels-path <path>] \
     [--codec h264|h265] \
@@ -24,7 +24,7 @@ Runs the recommended benchmark matrix:
   2. pyav + headless
   3. gstreamer + display
   4. gstreamer + headless
-and repeats it for the 320 model if provided.
+and repeats it for whichever model(s) are provided.
 
 Each case writes a full log file plus a compact summary of:
   - fps_decode
@@ -102,7 +102,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$URI" || -z "$MODEL_640" ]]; then
+if [[ -z "$URI" || ( -z "$MODEL_640" && -z "$MODEL_320" ) ]]; then
   usage >&2
   exit 2
 fi
@@ -194,6 +194,13 @@ run_case() {
   local headless_flag="$5"
 
   local log_file="$OUTPUT_DIR/${case_name}.log"
+  if [[ ! -f "$model_path" ]]; then
+    printf 'case=%s\n' "$case_name" | tee -a "$SUMMARY_FILE"
+    echo "log_file=$log_file" | tee -a "$SUMMARY_FILE"
+    echo "result=skipped reason=model_not_found path=$model_path" | tee -a "$SUMMARY_FILE"
+    echo >> "$SUMMARY_FILE"
+    return
+  fi
   local -a cmd=(
     ./cds detect
     --uri "$URI"
@@ -237,12 +244,20 @@ run_case() {
     return
   fi
 
-  (
+  local exit_code=0
+  if (
     cd "$ROOT_DIR"
     "${cmd[@]}"
-  ) >"$log_file" 2>&1
+  ) >"$log_file" 2>&1; then
+    exit_code=0
+  else
+    exit_code=$?
+  fi
 
   echo "log_file=$log_file" | tee -a "$SUMMARY_FILE"
+  if [[ "$exit_code" -ne 0 ]]; then
+    echo "result=error exit_code=$exit_code" | tee -a "$SUMMARY_FILE"
+  fi
   python3 "$SCRIPT_DIR/rknn_benchmark_report.py" "$log_file" | tee -a "$SUMMARY_FILE"
   echo >> "$SUMMARY_FILE"
 }
@@ -258,7 +273,9 @@ run_matrix_for_model() {
   run_case "${label}-gst-headless" "$model_path" "$configured_imgsz" "gstreamer" "1"
 }
 
-run_matrix_for_model "model640" "$MODEL_640" "640"
+if [[ -n "$MODEL_640" ]]; then
+  run_matrix_for_model "model640" "$MODEL_640" "640"
+fi
 if [[ -n "$MODEL_320" ]]; then
   run_matrix_for_model "model320" "$MODEL_320" "320"
 fi

@@ -111,9 +111,15 @@ def _compact(summary: dict) -> str:
     fps_decode = summary.get("fps_decode", {})
     fps_infer = summary.get("fps_infer", {})
     frame_age = summary.get("frame_age_ms", {})
+    status = "ok"
+    if perf and not fps_infer:
+        status = "no-frames"
+    elif not perf and not fps_infer:
+        status = "startup-failed"
 
     return (
         f"log={summary.get('log_path', '')} "
+        f"status={status} "
         f"ingest={perf.get('ingest', '?')} "
         f"configured_imgsz={perf.get('configured_imgsz', '?')} "
         f"effective={effective.get('width', '?')}x{effective.get('height', '?')} "
