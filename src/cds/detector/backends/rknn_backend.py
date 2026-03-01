@@ -259,14 +259,40 @@ class RKNNBackend(DetectorBackend):
         )
 
     def _load_postprocess_helpers(self):
+        nms_import_error: Exception | None = None
+        ops_import_error: Exception | None = None
+
         try:
             from ultralytics.utils.nms import non_max_suppression
+        except Exception as exc:
+            nms_import_error = exc
+            try:
+                from ultralytics.utils.ops import non_max_suppression
+            except Exception as inner_exc:
+                nms_import_error = inner_exc
+                non_max_suppression = None  # type: ignore[assignment]
+
+        try:
             from ultralytics.utils.ops import scale_boxes
         except Exception as exc:
+            ops_import_error = exc
+            scale_boxes = None  # type: ignore[assignment]
+
+        if non_max_suppression is None or scale_boxes is None:
+            details: list[str] = []
+            if nms_import_error is not None:
+                details.append(
+                    f"non_max_suppression import failed: {type(nms_import_error).__name__}: {nms_import_error}"
+                )
+            if ops_import_error is not None:
+                details.append(
+                    f"scale_boxes import failed: {type(ops_import_error).__name__}: {ops_import_error}"
+                )
             raise BackendUnavailable(
                 "RKNN backend requires ultralytics post-processing utilities "
-                "(ultralytics + torch)."
-            ) from exc
+                "(ultralytics + torch). "
+                + (" ".join(details) if details else "")
+            ) from (nms_import_error or ops_import_error)
         return non_max_suppression, scale_boxes
 
     def _letterbox(self, frame: Any, input_h: int, input_w: int) -> np.ndarray:

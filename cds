@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PYTHONPATH="${SCRIPT_DIR}/src:${PYTHONPATH:-}"
+PYTHON_BIN="${CDS_PYTHON_BIN:-python3}"
 
 usage() {
     cat <<'EOF'
@@ -38,7 +39,7 @@ command_name="${1:-help}"
 
 case "${command_name}" in
     detect|infer|train|evaluate|export|dataset|monitor|doctor)
-        exec python3 -m cds "$@"
+        exec "${PYTHON_BIN}" -m cds "$@"
         ;;
     detect-c4)
         shift
