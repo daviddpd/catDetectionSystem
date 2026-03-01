@@ -45,6 +45,8 @@ CONFIDENCE="0.6"
 NMS="0.5"
 OUTPUT_DIR=""
 DRY_RUN=0
+GSTREAMER_AVAILABLE=1
+GSTREAMER_SKIP_REASON=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -139,6 +141,51 @@ echo "uri=$URI" | tee -a "$SUMMARY_FILE"
 echo "gstreamer_pipeline=$GSTREAMER_PIPELINE" | tee -a "$SUMMARY_FILE"
 echo >> "$SUMMARY_FILE"
 
+trim_spaces() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+check_gstreamer_pipeline() {
+  if ! command -v gst-launch-1.0 >/dev/null 2>&1; then
+    GSTREAMER_AVAILABLE=0
+    GSTREAMER_SKIP_REASON="gst-launch-1.0 not found"
+    return
+  fi
+  if ! command -v gst-inspect-1.0 >/dev/null 2>&1; then
+    GSTREAMER_AVAILABLE=0
+    GSTREAMER_SKIP_REASON="gst-inspect-1.0 not found"
+    return
+  fi
+
+  local missing=()
+  while IFS= read -r segment; do
+    segment="$(trim_spaces "$segment")"
+    [[ -z "$segment" ]] && continue
+    local element="${segment%% *}"
+    [[ -z "$element" ]] && continue
+    if [[ "$element" == *"/"* ]]; then
+      continue
+    fi
+    if ! gst-inspect-1.0 "$element" >/dev/null 2>&1; then
+      missing+=("$element")
+    fi
+  done < <(printf '%s\n' "$GSTREAMER_PIPELINE" | tr '!' '\n')
+
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    GSTREAMER_AVAILABLE=0
+    GSTREAMER_SKIP_REASON="missing GStreamer elements: ${missing[*]}"
+  fi
+}
+
+check_gstreamer_pipeline
+if [[ "$GSTREAMER_AVAILABLE" -eq 0 ]]; then
+  echo "gstreamer_status=skipped reason=$GSTREAMER_SKIP_REASON" | tee -a "$SUMMARY_FILE"
+  echo >> "$SUMMARY_FILE"
+fi
+
 run_case() {
   local case_name="$1"
   local model_path="$2"
@@ -157,12 +204,20 @@ run_case() {
     --nms "$NMS"
     --benchmark
     --no-event-stdout
+    --log-level INFO
   )
 
   if [[ -n "$LABELS_PATH" ]]; then
     cmd+=(--labels-path "$LABELS_PATH")
   fi
   if [[ "$ingest_backend" == "gstreamer" ]]; then
+    if [[ "$GSTREAMER_AVAILABLE" -eq 0 ]]; then
+      printf 'case=%s\n' "$case_name" | tee -a "$SUMMARY_FILE"
+      echo "log_file=$log_file" | tee -a "$SUMMARY_FILE"
+      echo "result=skipped reason=$GSTREAMER_SKIP_REASON" | tee -a "$SUMMARY_FILE"
+      echo >> "$SUMMARY_FILE"
+      return
+    fi
     cmd+=(--ingest-backend gstreamer --gstreamer-pipeline "$GSTREAMER_PIPELINE")
   else
     cmd+=(--ingest-backend pyav)
