@@ -261,6 +261,13 @@ class RKNNBackend(DetectorBackend):
     def _load_postprocess_helpers(self):
         nms_import_error: Exception | None = None
         ops_import_error: Exception | None = None
+        preload_error: Exception | None = None
+
+        try:
+            import torch  # noqa: F401
+            import ultralytics  # noqa: F401
+        except Exception as exc:
+            preload_error = exc
 
         try:
             from ultralytics.utils.nms import non_max_suppression
@@ -287,6 +294,10 @@ class RKNNBackend(DetectorBackend):
             if ops_import_error is not None:
                 details.append(
                     f"scale_boxes import failed: {type(ops_import_error).__name__}: {ops_import_error}"
+                )
+            if preload_error is not None:
+                details.append(
+                    f"preload failed: {type(preload_error).__name__}: {preload_error}"
                 )
             raise BackendUnavailable(
                 "RKNN backend requires ultralytics post-processing utilities "
