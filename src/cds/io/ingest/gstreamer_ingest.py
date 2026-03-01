@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -23,10 +24,16 @@ class GStreamerIngest(OpenCVIngest):
             self._entries = []
             self._entry_index = 0
             self._current_image_pending = False
-            self._source_mode = "live-stream"
+            path = Path(uri)
+            self._source_mode = "video-file" if path.is_file() else "live-stream"
             self._nominal_fps = None
             self._release_capture()
             self._cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+            try:
+                fps = float(self._cap.get(cv2.CAP_PROP_FPS))
+                self._nominal_fps = fps if fps > 0 else None
+            except Exception:
+                self._nominal_fps = None
             return
 
         super().open(uri, options)
