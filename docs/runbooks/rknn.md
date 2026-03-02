@@ -48,6 +48,18 @@ Bundle output:
 - `artifacts/models/<run-id>/rknn/run_vendor_quant_smoke.sh`
 - `artifacts/models/<run-id>/rknn/chip_families.txt`
 
+## Runtime Ingest Guidance
+
+Preferred runtime ingest backend:
+- Use `pyav` for normal detection runs and benchmark baselines.
+- This is the default path on both macOS and Linux when PyAV is installed.
+
+Experimental runtime ingest backend:
+- `gstreamer` is Linux-only and considered experimental.
+- It is useful only when explicitly requested with `--ingest-backend gstreamer`.
+- It now depends on Python GStreamer bindings (`python3-gi`, `gir1.2-gstreamer-1.0`) visible to the current interpreter. On distro-managed Linux hosts, that may require a venv created with `python3 -m venv --system-site-packages ...`.
+- The benchmark helper `tools/rknn_benchmark_matrix.sh` runs `pyav` cases by default and only includes GStreamer when you pass `--include-gstreamer`.
+
 ## Calibration / Quantization Inputs
 
 Prepare a calibration file containing representative image paths:

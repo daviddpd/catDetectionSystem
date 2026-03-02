@@ -17,14 +17,17 @@ Usage:
     [--confidence <float>] \
     [--nms <float>] \
     [--output-dir <dir>] \
+    [--include-gstreamer] \
     [--dry-run]
 
 Runs the recommended benchmark matrix:
   1. pyav + display
   2. pyav + headless
+and repeats it for whichever model(s) are provided.
+
+Optional experimental matrix (Linux-only, opt-in):
   3. gstreamer + display
   4. gstreamer + headless
-and repeats it for whichever model(s) are provided.
 
 Each case writes a full log file plus a compact summary of:
   - fps_decode
@@ -45,6 +48,7 @@ CONFIDENCE="0.6"
 NMS="0.5"
 OUTPUT_DIR=""
 DRY_RUN=0
+INCLUDE_GSTREAMER=0
 GSTREAMER_AVAILABLE=1
 GSTREAMER_SKIP_REASON=""
 
@@ -86,6 +90,10 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_DIR="${2:-}"
       shift 2
       ;;
+    --include-gstreamer)
+      INCLUDE_GSTREAMER=1
+      shift
+      ;;
     --dry-run)
       DRY_RUN=1
       shift
@@ -113,24 +121,6 @@ if [[ -z "$OUTPUT_DIR" ]]; then
 fi
 mkdir -p "$OUTPUT_DIR"
 
-if [[ -z "$GSTREAMER_PIPELINE" ]]; then
-  while IFS= read -r line; do
-    if [[ "$line" == cds_pipeline=* ]]; then
-      GSTREAMER_PIPELINE="${line#cds_pipeline=}"
-    fi
-  done < <(
-    python3 "$SCRIPT_DIR/rknn_build_gst_pipeline.py" \
-      --uri "$URI" \
-      --codec "$CODEC" \
-      --format all
-  )
-fi
-
-if [[ -z "$GSTREAMER_PIPELINE" ]]; then
-  echo "Failed to derive a GStreamer pipeline." >&2
-  exit 1
-fi
-
 SUMMARY_FILE="$OUTPUT_DIR/summary.txt"
 COMMANDS_FILE="$OUTPUT_DIR/commands.txt"
 : > "$SUMMARY_FILE"
@@ -138,7 +128,28 @@ COMMANDS_FILE="$OUTPUT_DIR/commands.txt"
 
 echo "benchmark_output_dir=$OUTPUT_DIR" | tee -a "$SUMMARY_FILE"
 echo "uri=$URI" | tee -a "$SUMMARY_FILE"
-echo "gstreamer_pipeline=$GSTREAMER_PIPELINE" | tee -a "$SUMMARY_FILE"
+if [[ "$INCLUDE_GSTREAMER" -eq 1 ]]; then
+  if [[ -z "$GSTREAMER_PIPELINE" ]]; then
+    while IFS= read -r line; do
+      if [[ "$line" == cds_pipeline=* ]]; then
+        GSTREAMER_PIPELINE="${line#cds_pipeline=}"
+      fi
+    done < <(
+      python3 "$SCRIPT_DIR/rknn_build_gst_pipeline.py" \
+        --uri "$URI" \
+        --codec "$CODEC" \
+        --format all
+    )
+  fi
+
+  if [[ -z "$GSTREAMER_PIPELINE" ]]; then
+    echo "Failed to derive a GStreamer pipeline." >&2
+    exit 1
+  fi
+  echo "gstreamer_pipeline=$GSTREAMER_PIPELINE" | tee -a "$SUMMARY_FILE"
+else
+  echo "gstreamer_status=disabled reason=pyav-default-use --include-gstreamer to opt in" | tee -a "$SUMMARY_FILE"
+fi
 echo >> "$SUMMARY_FILE"
 
 trim_spaces() {
@@ -186,10 +197,12 @@ check_gstreamer_pipeline() {
   fi
 }
 
-check_gstreamer_pipeline
-if [[ "$GSTREAMER_AVAILABLE" -eq 0 ]]; then
-  echo "gstreamer_status=skipped reason=$GSTREAMER_SKIP_REASON" | tee -a "$SUMMARY_FILE"
-  echo >> "$SUMMARY_FILE"
+if [[ "$INCLUDE_GSTREAMER" -eq 1 ]]; then
+  check_gstreamer_pipeline
+  if [[ "$GSTREAMER_AVAILABLE" -eq 0 ]]; then
+    echo "gstreamer_status=skipped reason=$GSTREAMER_SKIP_REASON" | tee -a "$SUMMARY_FILE"
+    echo >> "$SUMMARY_FILE"
+  fi
 fi
 
 run_case() {
@@ -275,8 +288,10 @@ run_matrix_for_model() {
 
   run_case "${label}-pyav-display" "$model_path" "$configured_imgsz" "pyav" "0"
   run_case "${label}-pyav-headless" "$model_path" "$configured_imgsz" "pyav" "1"
-  run_case "${label}-gst-display" "$model_path" "$configured_imgsz" "gstreamer" "0"
-  run_case "${label}-gst-headless" "$model_path" "$configured_imgsz" "gstreamer" "1"
+  if [[ "$INCLUDE_GSTREAMER" -eq 1 ]]; then
+    run_case "${label}-gst-display" "$model_path" "$configured_imgsz" "gstreamer" "0"
+    run_case "${label}-gst-headless" "$model_path" "$configured_imgsz" "gstreamer" "1"
+  fi
 }
 
 if [[ -n "$MODEL_640" ]]; then

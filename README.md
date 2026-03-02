@@ -55,6 +55,18 @@ Training/model commands:
 Legacy compatibility alias:
 - `cds detect-c4`
 
+## Ingest Backend Guidance
+
+Supported default ingest path:
+- `pyav` is the primary, supported ingest backend on both macOS and Linux.
+- `auto` selects `pyav` first when it is installed.
+
+Experimental ingest path:
+- `gstreamer` is Linux-only and experimental.
+- It is not part of the normal macOS ingest path.
+- It now requires Python GStreamer bindings (`python3-gi`, `gir1.2-gstreamer-1.0`) visible to the interpreter running `./cds`.
+- Use it only when explicitly requested with `--ingest-backend gstreamer`; otherwise prefer `pyav`.
+
 ## Darknet (`opencv-darknet`) to Export Formats
 
 Example legacy runtime command (your current `.cfg` + `.weights` pair):
@@ -115,6 +127,7 @@ For RK3588 / Orange Pi style hosts:
 - Confidence thresholds do not transfer cleanly across backends. A threshold that works on CoreML may be too strict or too noisy on RKNN; re-tune `--confidence` per exported artifact, especially when comparing quantized vs non-quantized RKNN builds.
 - `artifacts/models/<run-id>/rknn/make_calibration_txt.py` now supports model-assisted calibration set generation. You can run it on a Mac against local images with `--model-path .../exports/best.mlpackage --backend auto --min-confidence 0.90` to build a stronger `calibration.txt` before converting on the RKNN host.
 - The RKNN bundle now also includes `convert_toolkit2_vendor.py`, `smoke_test_rknn.py`, and `run_vendor_quant_smoke.sh` so you can do a vendor-style quantized conversion and a standalone RKNNLite smoke test on one still image before using `./cds detect`.
+- Benchmarking defaults to `pyav` only. The helper script `tools/rknn_benchmark_matrix.sh` runs GStreamer cases only when you pass `--include-gstreamer`, because GStreamer is considered an advanced Linux-only path and may require a `--system-site-packages` Python environment for `gi`.
 
 Example:
 
