@@ -149,6 +149,7 @@ trim_spaces() {
 }
 
 check_gstreamer_pipeline() {
+  local python_bin="${CDS_PYTHON_BIN:-python3}"
   if ! command -v gst-launch-1.0 >/dev/null 2>&1; then
     GSTREAMER_AVAILABLE=0
     GSTREAMER_SKIP_REASON="gst-launch-1.0 not found"
@@ -157,6 +158,11 @@ check_gstreamer_pipeline() {
   if ! command -v gst-inspect-1.0 >/dev/null 2>&1; then
     GSTREAMER_AVAILABLE=0
     GSTREAMER_SKIP_REASON="gst-inspect-1.0 not found"
+    return
+  fi
+  if ! "$python_bin" -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst" >/dev/null 2>&1; then
+    GSTREAMER_AVAILABLE=0
+    GSTREAMER_SKIP_REASON="Python GStreamer bindings unavailable in $python_bin"
     return
   fi
 
