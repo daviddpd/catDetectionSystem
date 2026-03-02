@@ -128,6 +128,14 @@ For RK3588 / Orange Pi style hosts:
 - `artifacts/models/<run-id>/rknn/make_calibration_txt.py` now supports model-assisted calibration set generation. You can run it on a Mac against local images with `--model-path .../exports/best.mlpackage --backend auto --min-confidence 0.90` to build a stronger `calibration.txt` before converting on the RKNN host.
 - The RKNN bundle now also includes `convert_toolkit2_vendor.py`, `smoke_test_rknn.py`, and `run_vendor_quant_smoke.sh` so you can do a vendor-style quantized conversion and a standalone RKNNLite smoke test on one still image before using `./cds detect`.
 - Benchmarking defaults to `pyav` only. The helper script `tools/rknn_benchmark_matrix.sh` runs GStreamer cases only when you pass `--include-gstreamer`, because GStreamer is considered an advanced Linux-only path and may require a `--system-site-packages` Python environment for `gi`.
+- The benchmark helper now supports generic A/B/C model comparisons with repeated `--case` entries. Each case can carry its own model path, `imgsz`, and optional labels file, for example:
+
+```bash
+./tools/rknn_benchmark_matrix.sh \
+  --uri /path/to/video.mp4 \
+  --case baseline:artifacts/models/run-a/rknn/model.toolkit2.rknn:320:config/classes-run-a.txt \
+  --case candidate-b:artifacts/models/run-b/rknn/model.toolkit2.rknn:640:config/classes-run-b.txt
+```
 
 Example:
 

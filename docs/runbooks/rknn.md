@@ -60,6 +60,20 @@ Experimental runtime ingest backend:
 - It now depends on Python GStreamer bindings (`python3-gi`, `gir1.2-gstreamer-1.0`) visible to the current interpreter. On distro-managed Linux hosts, that may require a venv created with `python3 -m venv --system-site-packages ...`.
 - The benchmark helper `tools/rknn_benchmark_matrix.sh` runs `pyav` cases by default and only includes GStreamer when you pass `--include-gstreamer`.
 
+Generic model A/B/C benchmarking:
+- `tools/rknn_benchmark_matrix.sh` now accepts repeated `--case` entries instead of assuming only "640 vs 320".
+- Format: `--case <name>:<model_path>:<imgsz>[:<labels_path>]`
+- Example:
+
+```bash
+./tools/rknn_benchmark_matrix.sh \
+  --uri /path/to/video.mp4 \
+  --case baseline:artifacts/models/run-a/rknn/model.toolkit2.rknn:320:config/classes-run-a.txt \
+  --case candidate-b:artifacts/models/run-b/rknn/model.toolkit2.rknn:640:config/classes-run-b.txt
+```
+
+- Legacy `--model-640` / `--model-320` flags still work as compatibility aliases, but they share one `--labels-path` and are less useful once model class lists diverge.
+
 ## Calibration / Quantization Inputs
 
 Prepare a calibration file containing representative image paths:

@@ -9,6 +9,7 @@ usage() {
 Usage:
   tools/rknn_benchmark_matrix.sh \
     --uri <video-or-rtsp> \
+    [--case <name>:<model_path>:<imgsz>[:<labels_path>]] \
     [--model-640 <path>] \
     [--model-320 <path>] \
     [--labels-path <path>] \
@@ -23,11 +24,18 @@ Usage:
 Runs the recommended benchmark matrix:
   1. pyav + display
   2. pyav + headless
-and repeats it for whichever model(s) are provided.
+and repeats it for each supplied case.
 
 Optional experimental matrix (Linux-only, opt-in):
   3. gstreamer + display
   4. gstreamer + headless
+
+Primary interface:
+  --case baseline:/path/to/model.rknn:320:/path/to/labels.txt
+  --case candidate-b:/path/to/model.rknn:640
+
+Legacy compatibility aliases:
+  --model-640 / --model-320 still work and use the shared --labels-path.
 
 Each case writes a full log file plus a compact summary of:
   - fps_decode
@@ -39,6 +47,7 @@ EOF
 }
 
 URI=""
+CASE_SPECS=()
 MODEL_640=""
 MODEL_320=""
 LABELS_PATH=""
@@ -56,6 +65,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --uri)
       URI="${2:-}"
+      shift 2
+      ;;
+    --case)
+      CASE_SPECS+=("${2:-}")
       shift 2
       ;;
     --model-640)
@@ -110,7 +123,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$URI" || ( -z "$MODEL_640" && -z "$MODEL_320" ) ]]; then
+if [[ -z "$URI" || ( ${#CASE_SPECS[@]} -eq 0 && -z "$MODEL_640" && -z "$MODEL_320" ) ]]; then
   usage >&2
   exit 2
 fi
@@ -207,12 +220,14 @@ fi
 
 run_case() {
   local case_name="$1"
-  local model_path="$2"
-  local configured_imgsz="$3"
-  local ingest_backend="$4"
-  local headless_flag="$5"
+  local case_file_prefix="$2"
+  local model_path="$3"
+  local configured_imgsz="$4"
+  local case_labels_path="$5"
+  local ingest_backend="$6"
+  local headless_flag="$7"
 
-  local log_file="$OUTPUT_DIR/${case_name}.log"
+  local log_file="$OUTPUT_DIR/${case_file_prefix}.log"
   if [[ ! -f "$model_path" ]]; then
     printf 'case=%s\n' "$case_name" | tee -a "$SUMMARY_FILE"
     echo "log_file=$log_file" | tee -a "$SUMMARY_FILE"
@@ -233,7 +248,9 @@ run_case() {
     --log-level INFO
   )
 
-  if [[ -n "$LABELS_PATH" ]]; then
+  if [[ -n "$case_labels_path" ]]; then
+    cmd+=(--labels-path "$case_labels_path")
+  elif [[ -n "$LABELS_PATH" ]]; then
     cmd+=(--labels-path "$LABELS_PATH")
   fi
   if [[ "$ingest_backend" == "gstreamer" ]]; then
@@ -281,24 +298,57 @@ run_case() {
   echo >> "$SUMMARY_FILE"
 }
 
-run_matrix_for_model() {
+sanitize_case_name() {
+  local raw="$1"
+  local safe="${raw//[^A-Za-z0-9._-]/_}"
+  printf '%s' "$safe"
+}
+
+run_case_set() {
   local label="$1"
   local model_path="$2"
   local configured_imgsz="$3"
+  local case_labels_path="$4"
+  local safe_label
+  safe_label="$(sanitize_case_name "$label")"
 
-  run_case "${label}-pyav-display" "$model_path" "$configured_imgsz" "pyav" "0"
-  run_case "${label}-pyav-headless" "$model_path" "$configured_imgsz" "pyav" "1"
+  run_case "${label}-pyav-display" "${safe_label}-pyav-display" "$model_path" "$configured_imgsz" "$case_labels_path" "pyav" "0"
+  run_case "${label}-pyav-headless" "${safe_label}-pyav-headless" "$model_path" "$configured_imgsz" "$case_labels_path" "pyav" "1"
   if [[ "$INCLUDE_GSTREAMER" -eq 1 ]]; then
-    run_case "${label}-gst-display" "$model_path" "$configured_imgsz" "gstreamer" "0"
-    run_case "${label}-gst-headless" "$model_path" "$configured_imgsz" "gstreamer" "1"
+    run_case "${label}-gst-display" "${safe_label}-gst-display" "$model_path" "$configured_imgsz" "$case_labels_path" "gstreamer" "0"
+    run_case "${label}-gst-headless" "${safe_label}-gst-headless" "$model_path" "$configured_imgsz" "$case_labels_path" "gstreamer" "1"
   fi
 }
 
-if [[ -n "$MODEL_640" ]]; then
-  run_matrix_for_model "model640" "$MODEL_640" "640"
-fi
-if [[ -n "$MODEL_320" ]]; then
-  run_matrix_for_model "model320" "$MODEL_320" "320"
+parse_case_spec() {
+  local spec="$1"
+  local name=""
+  local model_path=""
+  local configured_imgsz=""
+  local case_labels_path=""
+  local extra=""
+  IFS=':' read -r name model_path configured_imgsz case_labels_path extra <<< "$spec"
+  if [[ -z "$name" || -z "$model_path" || -z "$configured_imgsz" || -n "$extra" ]]; then
+    echo "Invalid --case format: $spec" >&2
+    echo "Expected: <name>:<model_path>:<imgsz>[:<labels_path>]" >&2
+    exit 2
+  fi
+  printf '%s\t%s\t%s\t%s\n' "$name" "$model_path" "$configured_imgsz" "$case_labels_path"
+}
+
+if [[ ${#CASE_SPECS[@]} -gt 0 ]]; then
+  for case_spec in "${CASE_SPECS[@]}"; do
+    parsed_case_text="$(parse_case_spec "$case_spec")"
+    IFS=$'\t' read -r case_name case_model case_imgsz case_labels <<< "$parsed_case_text"
+    run_case_set "$case_name" "$case_model" "$case_imgsz" "$case_labels"
+  done
+else
+  if [[ -n "$MODEL_640" ]]; then
+    run_case_set "model640" "$MODEL_640" "640" ""
+  fi
+  if [[ -n "$MODEL_320" ]]; then
+    run_case_set "model320" "$MODEL_320" "320" ""
+  fi
 fi
 
 echo "summary_file=$SUMMARY_FILE"
