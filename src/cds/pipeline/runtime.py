@@ -20,6 +20,7 @@ from cds.pipeline.detection_capture import DetectionCaptureManager
 from cds.pipeline.frame_queue import LatestFrameQueue
 from cds.triggers import TriggerManager
 from cds.types import Detection, FramePacket
+from cds.utils import redact_uri_password
 
 _VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm"}
 
@@ -324,7 +325,7 @@ class DetectionRuntime:
                             "source dimensions width=%d height=%d source=%s",
                             width,
                             height,
-                            packet.source,
+                            redact_uri_password(packet.source),
                         )
                         source_shape_logged.set()
                     except Exception:
@@ -358,7 +359,7 @@ class DetectionRuntime:
                         self._logger.info(
                             "source clock active fps=%.3f source=%s",
                             source_clock_fps,
-                            source_clock_source,
+                            redact_uri_password(source_clock_source),
                         )
 
                     target_time = source_clock_start + (source_clock_frames / source_clock_fps)
@@ -490,12 +491,13 @@ class DetectionRuntime:
 
                 if event_sink_enabled:
                     timestamp = event_packet.timestamp.astimezone(timezone.utc).isoformat()
+                    redacted_source = redact_uri_password(event_packet.source)
                     for detection in event_packet.detections:
                         event_sink.emit(
                             {
                                 "ts": timestamp,
                                 "frame_id": event_packet.frame_id,
-                                "source": event_packet.source,
+                                "source": redacted_source,
                                 "label": detection.label,
                                 "class_id": detection.class_id,
                                 "confidence": detection.confidence,

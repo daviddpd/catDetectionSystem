@@ -8,6 +8,17 @@ from cds.triggers.manager import TriggerManager
 from cds.types import Detection, FramePacket
 
 
+class _CaptureHooks:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def emit(self, label: str, payload: dict[str, object]) -> None:
+        self.calls.append((label, payload))
+
+    def close(self) -> None:
+        return None
+
+
 class TriggerManagerTests(unittest.TestCase):
     def _packet(self, frame_id: int = 1) -> FramePacket:
         return FramePacket(
@@ -125,6 +136,33 @@ class TriggerManagerTests(unittest.TestCase):
             )
             self.assertTrue(activated.any_active)
             self.assertEqual(len(activated.activated_detections), 1)
+        finally:
+            manager.close()
+
+    def test_hook_payload_source_redacts_password(self) -> None:
+        config = TriggerConfig(
+            audio=AudioTriggerConfig(enabled=False),
+            hooks=HookTriggerConfig(enabled=True, frames_detect_on=1),
+        )
+        manager = TriggerManager(config)
+        hooks = _CaptureHooks()
+        manager._hooks = hooks  # type: ignore[assignment]
+        try:
+            packet = FramePacket(
+                frame_id=1,
+                frame=None,
+                source="rtsp://camera-user:super-secret@example.local:554/live/main",
+                timestamp=datetime.now(),
+            )
+            manager.process(packet, [self._det()], "unit")
+
+            self.assertEqual(len(hooks.calls), 1)
+            label, payload = hooks.calls[0]
+            self.assertEqual(label, "cat")
+            self.assertEqual(
+                payload.get("source"),
+                "rtsp://camera-user:***@example.local:554/live/main",
+            )
         finally:
             manager.close()
 

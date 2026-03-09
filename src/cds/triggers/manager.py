@@ -8,6 +8,7 @@ from cds.config.models import AudioTriggerConfig, HookTriggerConfig, TriggerConf
 from cds.triggers.audio import AudioTrigger
 from cds.triggers.hooks import HookTrigger
 from cds.types import Detection, FramePacket
+from cds.utils import redact_uri_password
 
 
 @dataclass
@@ -199,7 +200,7 @@ class TriggerManager:
             payload = {
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "frame_id": packet.frame_id,
-                "source": packet.source,
+                "source": redact_uri_password(packet.source),
                 "backend": backend_name,
                 "label": det.label,
                 "confidence": det.confidence,
