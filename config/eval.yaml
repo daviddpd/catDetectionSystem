@@ -15,8 +15,9 @@ gating:
   required_classes:
     - cat
     - dog
-    - raccoon
+    - person
     - opossum
+    - raccoon
     - skunk
   recall_thresholds:
     cat: 0.65

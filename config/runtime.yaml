@@ -1,7 +1,7 @@
 model:
   name: communitycats
   path: artifacts/models/latest/checkpoints/best.pt
-  labels_path: dataset-cds/classes.txt
+  labels_path: config/classes.txt
   confidence: 0.8
   nms: 0.5
   imgsz: 320

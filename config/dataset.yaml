@@ -1,7 +1,7 @@
 dataset:
-  output_root: imagebyclass-2026-02-28
-  xml_root: annotations/xml
-  image_root: annotations/images
+  output_root: imagebyclass-2026-03-08
+  xml_root: /Users/dpd/Documents/projects/communitycats/imagebyclass
+  image_root: /Users/dpd/Documents/projects/communitycats/imagebyclass
   classes:
     - cat
     - dog
@@ -14,4 +14,4 @@ dataset:
     train: 0.8
     val: 0.1
     test: 0.1
-  report: imagebyclass-2026-02-28/reports/dataset_health.json
+  report: artifacts/reports/dataset_health.json

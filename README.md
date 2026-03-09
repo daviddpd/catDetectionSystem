@@ -34,6 +34,34 @@ pip install -r requirements.txt
 ./cds export --config config/export.yaml --targets all
 ```
 
+## From-Scratch Training
+
+`cds train` can now run without loading pretrained weights.
+
+CLI mode:
+
+```bash
+./cds train \
+  --config config/train.yaml \
+  --from-scratch \
+  --model yolov8s.pt
+```
+
+Notes:
+- In from-scratch mode, training sets `pretrained=False`.
+- If `--model-arch` is not provided and `--model` ends with `.pt`/`.pth`, CDS maps it to the matching architecture YAML (for example `yolov8s.pt -> yolov8s.yaml`).
+- You can provide an explicit architecture YAML with `--model-arch yolov8s.yaml`.
+
+Config mode (`config/train.yaml`):
+
+```yaml
+model:
+  base: yolov8s.pt
+  from_scratch: true
+  arch: null
+  imgsz: 320
+```
+
 ## CLI Overview
 
 Primary command: `./cds`

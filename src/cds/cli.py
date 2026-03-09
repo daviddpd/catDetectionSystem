@@ -125,6 +125,15 @@ def _build_parser() -> argparse.ArgumentParser:
     train = subparsers.add_parser("train", help="Train models and run active learning workflows")
     train.add_argument("--config", help="Path to train config")
     train.add_argument("--model", help="Base checkpoint/model path")
+    train.add_argument(
+        "--from-scratch",
+        action="store_true",
+        help="Train from architecture definition without loading pretrained weights",
+    )
+    train.add_argument(
+        "--model-arch",
+        help="Architecture YAML for from-scratch mode (for example yolov8s.yaml)",
+    )
     train.add_argument("--epochs", type=int, help="Training epochs")
     train.add_argument("--imgsz", type=int, help="Training image size")
     train.add_argument("--batch", type=int, help="Training batch size")

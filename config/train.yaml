@@ -1,16 +1,16 @@
 experiment:
-  name: active-learning
+  name: x-community-cats
   artifact_root: artifacts/models
 
 dataset:
-  data_yaml: imagebyclass-2026-02-28/data.yaml
+  data_yaml: lastest/data.yaml
 
 model:
-  base: yolov8s.pt
+  base: artifacts/models/lastest/checkpoints/best.pt
   imgsz: 320
 
 train:
-  epochs: 20
+  epochs: 50
   batch: 32
   device: cpu
   amp: true

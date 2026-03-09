@@ -106,6 +106,8 @@ def run_train(args: Any, repo_root: Path) -> int:
             },
             "model": {
                 "base": args.model,
+                "from_scratch": (True if args.from_scratch else None),
+                "arch": args.model_arch,
                 "imgsz": args.imgsz,
             },
             "train": {

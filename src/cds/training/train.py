@@ -21,6 +21,8 @@ def _default_train_config() -> dict[str, Any]:
         },
         "model": {
             "base": DEFAULT_TRAIN_MODEL,
+            "from_scratch": False,
+            "arch": None,
             "imgsz": 640,
         },
         "train": {
@@ -70,6 +72,33 @@ def load_train_config(config_path: str | None, cli_overrides: dict[str, Any] | N
     return config
 
 
+def _resolve_training_model_source(model_cfg: dict[str, Any]) -> tuple[str, bool]:
+    base_raw = model_cfg.get("base", DEFAULT_TRAIN_MODEL)
+    base = str(base_raw).strip() if base_raw is not None else ""
+    from_scratch = bool(model_cfg.get("from_scratch", False))
+    arch_raw = model_cfg.get("arch")
+    arch = str(arch_raw).strip() if arch_raw is not None else ""
+
+    if not from_scratch:
+        if not base:
+            raise ValueError("train config model.base must be set for finetune mode")
+        return base, False
+
+    if arch:
+        return arch, True
+
+    if base.endswith(".pt"):
+        return f"{base[:-3]}.yaml", True
+    if base.endswith(".pth"):
+        return f"{base[:-4]}.yaml", True
+    if base.endswith((".yaml", ".yml")):
+        return base, True
+
+    raise ValueError(
+        "from-scratch mode requires model.arch, or model.base ending in .pt/.pth/.yaml"
+    )
+
+
 def run_finetune_training(
     repo_root: Path,
     config_path: str | None,
@@ -94,8 +123,8 @@ def run_finetune_training(
     except ImportError as exc:
         raise RuntimeError("Training requires ultralytics package") from exc
 
-    model_base = cfg["model"]["base"]
-    model = YOLO(model_base)
+    model_source, from_scratch = _resolve_training_model_source(cfg.get("model", {}))
+    model = YOLO(model_source)
 
     train_args = {
         "data": str(data_yaml),
@@ -109,6 +138,8 @@ def run_finetune_training(
         "project": str(dirs["root"]),
         "name": "ultralytics_train",
     }
+    if from_scratch:
+        train_args["pretrained"] = False
 
     results = model.train(**train_args)
 
@@ -133,6 +164,8 @@ def run_finetune_training(
         "run_id": run_id,
         "artifact_root": str(dirs["root"]),
         "checkpoint": str(best_dest),
+        "model_source": model_source,
+        "from_scratch": from_scratch,
         "train_args": train_args,
     }
 
