@@ -1,20 +1,20 @@
 experiment:
-  name: communitycats-prod
+  name: active-learning
   artifact_root: artifacts/models
 
 dataset:
-  data_yaml: dataset-cds/data.yaml
+  data_yaml: imagebyclass-2026-02-28/data.yaml
 
 model:
-  base: artifacts/models/communitycats-prod-20260217-201910/checkpoints/best.pt
-  imgsz: 416
+  base: yolov8s.pt
+  imgsz: 320
 
 train:
-  epochs: 80
-  batch: 16
+  epochs: 20
+  batch: 32
   device: cpu
   amp: true
-  workers: 8
+  workers: 16
   patience: 20
 
 export:
@@ -25,12 +25,14 @@ gating:
   required_classes:
     - cat
     - dog
-    - raccoon
+    - person
     - opossum
+    - raccoon
     - skunk
   recall_thresholds:
     cat: 0.65
     dog: 0.60
+    person: 0.6
     raccoon: 0.60
     opossum: 0.60
     skunk: 0.60

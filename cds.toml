@@ -3,8 +3,8 @@ name = "communitycats"
 # For Ultralytics backend (.pt/.onnx/.engine/.mlpackage/.rknn)
 path = "/abs/path/to/model.pt"
 # For OpenCV/Darknet fallback backend
-cfg_path = "/abs/path/to/yolov-tiny-custom-416v6-64.cfg"
-weights_path = "/abs/path/to/yolov-tiny-custom-416v6-64_final.weights"
+cfg_path = "yolo/cfg/yolov-tiny-custom-416v6-64.cfg"
+weights_path = "yolo/cfg/yolov-tiny-custom-416v6-64_final.weights"
 labels_path = "yolo/cfg/custom-names-v4.txt"
 confidence = 0.5
 nms = 0.5
@@ -37,9 +37,10 @@ remote_enabled = false
 remote_host = "0.0.0.0"
 remote_port = 8080
 remote_path = "/stream.mjpg"
+detections_window_enabled = false
 
 [triggers.audio]
-enabled = true
+enabled = false
 cooldown_seconds = 60.0
 frames_detect_on = 2
 

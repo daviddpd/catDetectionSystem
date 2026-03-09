@@ -29,6 +29,7 @@ def draw_overlays(
     reference_y = 36
     status_text_x = 1300
     status_text_y = 36
+
     cv2.putText(
         frame,
         f"backend={backend} fps={fps_infer:.2f}",
@@ -39,6 +40,16 @@ def draw_overlays(
         2,
         cv2.LINE_AA,
     )
+#     cv2.putText(
+#         frame,
+#         f"imgsize: {height} x {width}",
+#         (status_text_x, status_text_y + status_text_y),
+#         cv2.FONT_HERSHEY_SIMPLEX,
+#         1.2,
+#         (255, 255, 255),
+#         2,
+#         cv2.LINE_AA,
+#     )
 
     for detection in detections:
         color = _color_for_label(detection.label)

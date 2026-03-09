@@ -7,7 +7,7 @@ dataset:
 
 eval:
   device: cpu
-  imgsz: 416
+  imgsz: 320
   batch: 16
   conf: 0.25
 

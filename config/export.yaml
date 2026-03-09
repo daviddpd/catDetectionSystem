@@ -4,5 +4,5 @@ model:
 export:
   output_dir: artifacts/models/manual-export
   targets: all
-  imgsz: 416
+  imgsz: 320
   half: false

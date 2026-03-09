@@ -18,7 +18,7 @@ class DisplaySink(OutputSink):
             return
         cv2.namedWindow(
             self._window_name,
-            cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_EXPANDED,
+            cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO | cv2.WINDOW_GUI_NORMAL,
         )
         self._open = True
 

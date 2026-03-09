@@ -1,16 +1,17 @@
 dataset:
-  output_root: dataset-cds
+  output_root: imagebyclass-2026-02-28
   xml_root: annotations/xml
   image_root: annotations/images
   classes:
     - cat
     - dog
-    - raccoon
+    - person
     - opossum
+    - raccoon
     - skunk
   split_mode: deterministic
   split_ratios:
     train: 0.8
     val: 0.1
     test: 0.1
-  report: dataset-cds/reports/dataset_health.json
+  report: imagebyclass-2026-02-28/reports/dataset_health.json

@@ -4,7 +4,7 @@ model:
   labels_path: dataset-cds/classes.txt
   confidence: 0.8
   nms: 0.5
-  imgsz: 416
+  imgsz: 320
 
 backend_policy:
   requested: auto
