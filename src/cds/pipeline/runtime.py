@@ -23,6 +23,7 @@ from cds.pipeline.snapshot_gate import WindowSnapshotGate
 from cds.triggers import TriggerManager
 from cds.types import Detection, FramePacket
 from cds.utils import redact_uri_password
+from cds.utils.window_layout import place_windows_side_by_side
 
 _VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm"}
 
@@ -289,6 +290,14 @@ class DetectionRuntime:
                 scale=self._config.output.detections_window_scale,
             )
             detections_gallery.open()
+            if display_sink is not None:
+                if not place_windows_side_by_side(
+                    display_sink.window_name,
+                    detections_gallery.window_name,
+                ):
+                    self._logger.debug(
+                        "window side-by-side placement unavailable; using platform defaults"
+                    )
 
         event_queue: LatestFrameQueue[_EventPacket] | None = None
         if event_sink_enabled:

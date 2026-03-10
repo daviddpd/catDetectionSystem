@@ -149,5 +149,9 @@ class DetectionsGallerySink:
             cv2.destroyWindow(self._window_name)
             self._open = False
 
+    @property
+    def window_name(self) -> str:
+        return self._window_name
+
     def name(self) -> str:
         return "detections-gallery"

@@ -37,6 +37,10 @@ class DisplaySink(OutputSink):
         self._last_key = -1
         return key
 
+    @property
+    def window_name(self) -> str:
+        return self._window_name
+
     def close(self) -> None:
         if self._open:
             cv2.destroyWindow(self._window_name)
