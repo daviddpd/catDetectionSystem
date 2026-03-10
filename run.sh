@@ -2,17 +2,79 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SELECT_SRC=$1
 
-echo "[DEPRECATED] run.sh is a legacy wrapper."
-echo "[DEPRECATED] Use: ${SCRIPT_DIR}/cds detect --uri <uri-or-path> [other options]"
+# Working Model artifacts directory
+WMD="artifacts/models/x-community-cats-20260309-065444"
 
-for video in /Volumes/camera/uploads/c4/2026/02/16/; do
+OS=`uname -o`
+
+if [ $OS == "Darwin" ]; then
+    MODEL="$WMD/exports/best.mlpackage"
+    IMGSIZE=320 
+    NMS=0.5
+    CONFIDENCE=0.5
+    MOUNTPT="/Volumes"
+else
+    MODEL="$WMD/rknn/model.toolkit2.rknn"
+    IMGSIZE=320 
+    NMS=0.5
+    CONFIDENCE=0.5
+    MOUNTPT="/z"
+fi
+
+demo_video_path="/Users/dpd/Movies/cds-demo-video.mp4 /z/camera/communitycats/cds-demo-video.mp4"
+video_ref_dir="$MOUNTPT/camera/communitycats/referenceVideos $MOUNTPT/camera/communitycats/referenceVideos2"
+
+echo " ================ Model ================================== "
+echo "Model: $MODEL"
+echo " ========================================================="
+
+
+src=""
+
+case $SELECT_SRC in
+    [cC]1|tplink)
+        src='rtsp://admin:cwvqYgGn4vjGN3oKYdVBj@c1.dpdtech.com:554/h264Preview_01_main'
+        ;;
+    c100)
+        src='rtsp://camera:GKouGCXCXmR2HzF@C100.dpdtech.com:554/stream1'
+        ;;
+    d1)
+        src='rtsp://thingino:thingino@ing-cinnado-d1-268c.local/ch0'
+        ;;
+    demo)
+        for v in $demo_video_path; do
+            if [ -f "$v" ]; then
+                src=$v
+            fi
+        done        
+        ;;
+    ref)
+        for v in $video_ref_dir; do
+            if [ -d "$v" ]; then
+                files=`find $v -name "*.mp4" | sort -R | xargs`
+                src="$src $files"
+            fi
+        done
+        ;;
+esac
+
+echo " ================ Src ================================== "
+echo "URIs: $src "
+echo " ========================================================="
+
+for video in $src; do
     echo "$video"
-    python3 "${SCRIPT_DIR}/rtsp-object-ident.py" \
-        --repoPath "${SCRIPT_DIR}" \
-        --communityCatsPath /Volumes/camera/communitycats \
-        --uri "$video"
+    ./cds detect --uri $video \
+    --model-path $MODEL \
+    --imgsz $IMGSIZE --nms $NMS \
+    --confidence $CONFIDENCE \
+    --benchmark --no-event-stdout
+#         --confidence-min 0.50 \
+#         --export-frames \
+#         --export-frames-dir artifacts/exports/active-learning-2026.02.24 \
+#         --export-frames-sample-pct 25 \
 done
 
-# Example:
-# ${SCRIPT_DIR}/cds detect --communityCatsPath /Volumes/camera/communitycats --uri rtsp://<camera-uri>
+
