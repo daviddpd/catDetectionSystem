@@ -202,6 +202,11 @@ def _normalize(data: dict[str, Any], repo_root: Path) -> RuntimeConfig:
             detections_window_scale=max(
                 0.1, float(output_data.get("detections_window_scale", 0.5))
             ),
+            detections_window_macos_scale=(
+                max(0.05, min(1.0, float(output_data["detections_window_macos_scale"])))
+                if _none_if_empty(output_data.get("detections_window_macos_scale")) is not None
+                else None
+            ),
             detections_buffer_frames=max(
                 0, int(output_data.get("detections_buffer_frames", 0))
             ),

@@ -54,6 +54,24 @@ class ConfigLoaderTests(unittest.TestCase):
             self.assertEqual(config.ingest.clock_mode, "source")
             self.assertTrue(config.ingest.benchmark)
 
+    def test_macos_detections_window_scale_parses_optional_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            config_file = root / "cds.json"
+            config_file.write_text(
+                """
+{
+  "output": {
+    "detections_window_macos_scale": 0.25
+  }
+}
+""".strip(),
+                encoding="utf-8",
+            )
+
+            config = load_runtime_config(repo_root=root, config_path=str(config_file))
+            self.assertAlmostEqual(config.output.detections_window_macos_scale or 0.0, 0.25)
+
 
 if __name__ == "__main__":
     unittest.main()

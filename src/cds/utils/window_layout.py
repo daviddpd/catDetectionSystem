@@ -17,6 +17,7 @@ def compute_side_by_side_rects(
     *,
     margin: int = 24,
     gap: int = 16,
+    right_scale: float = 1.0,
 ) -> tuple[WindowRect, WindowRect]:
     safe_w = max(800, int(screen_width))
     safe_h = max(600, int(screen_height))
@@ -33,6 +34,17 @@ def compute_side_by_side_rects(
 
     left = WindowRect(x=left_x, y=y, width=panel_w, height=panel_h)
     right = WindowRect(x=right_x, y=y, width=panel_w, height=panel_h)
+    safe_scale = max(0.05, min(1.0, float(right_scale)))
+    if safe_scale < 0.999:
+        scaled_w = max(240, int(right.width * safe_scale))
+        scaled_h = max(180, int(right.height * safe_scale))
+        scaled_y = right.y + max(0, (right.height - scaled_h) // 2)
+        right = WindowRect(
+            x=right.x,
+            y=scaled_y,
+            width=scaled_w,
+            height=scaled_h,
+        )
     return left, right
 
 
@@ -52,14 +64,23 @@ def detect_screen_size() -> tuple[int, int]:
     return 1920, 1080
 
 
-def place_windows_side_by_side(left_window: str, right_window: str) -> bool:
+def place_windows_side_by_side(
+    left_window: str,
+    right_window: str,
+    *,
+    right_window_scale: float = 1.0,
+) -> bool:
     try:
         import cv2  # noqa: PLC0415
     except Exception:
         return False
 
     screen_w, screen_h = detect_screen_size()
-    left_rect, right_rect = compute_side_by_side_rects(screen_w, screen_h)
+    left_rect, right_rect = compute_side_by_side_rects(
+        screen_w,
+        screen_h,
+        right_scale=right_window_scale,
+    )
 
     try:
         cv2.resizeWindow(left_window, left_rect.width, left_rect.height)

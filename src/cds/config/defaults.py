@@ -42,6 +42,7 @@ DEFAULT_CONFIG: dict = {
         "detections_window_name": "cds-detections",
         "detections_window_slots": 6,
         "detections_window_scale": 0.5,
+        "detections_window_macos_scale": None,
         "detections_buffer_frames": 0,
         "remote_enabled": False,
         "remote_host": "0.0.0.0",

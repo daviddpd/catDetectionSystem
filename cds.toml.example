@@ -25,7 +25,7 @@ backend = "auto"
 queue_size = 2
 # Sampling target FPS before inference (default: disabled / unset)
 rate_limit_fps = 0.0
-# default: "auto" (live=asfast drain, files=source paced, benchmark forces asfast)
+# default: "auto" (source-paced for live/file; benchmark forces asfast)
 clock_mode = "auto"
 # default: false (file/directory sources only; process every frame, no-drop queues)
 benchmark = false
@@ -48,6 +48,8 @@ detections_window_name = "cds-detections"
 detections_window_slots = 6
 # default: 0.5 (gallery tile scale)
 detections_window_scale = 0.5
+# default: unset; on macOS an unset value auto-applies 0.25 to the detections window initial size
+detections_window_macos_scale = ""
 # default: 0 => derived as max(frames_detect_on)*3
 detections_buffer_frames = 0
 remote_enabled = false

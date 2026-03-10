@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import platform
 import threading
 import time
 from copy import deepcopy
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from cds.config.models import RuntimeConfig
 from cds.detector import select_backend
@@ -138,6 +140,7 @@ class DetectionRuntime:
                 )
 
         source_mode = ingest.source_mode()
+        is_live_source = source_mode == "live-stream"
         is_file_like_source = source_mode in {"video-file", "directory"}
 
         benchmark_requested = bool(self._config.ingest.benchmark)
@@ -220,6 +223,10 @@ class DetectionRuntime:
             (not self._config.output.headless)
             and bool(self._config.output.detections_window_enabled)
         )
+        macos_detections_window_scale = None
+        if platform.system().lower() == "darwin":
+            configured = self._config.output.detections_window_macos_scale
+            macos_detections_window_scale = configured if configured is not None else 0.25
 
         default_detect_on = max(
             1,
@@ -292,6 +299,11 @@ class DetectionRuntime:
                 if not place_windows_side_by_side(
                     display_sink.window_name,
                     detections_gallery.window_name,
+                    right_window_scale=(
+                        macos_detections_window_scale
+                        if macos_detections_window_scale is not None
+                        else 1.0
+                    ),
                 ):
                     self._logger.debug(
                         "window side-by-side placement unavailable; using platform defaults"
@@ -309,7 +321,7 @@ class DetectionRuntime:
         else:
             model_format = "unknown"
         self._logger.info(
-            "perf config model_path=%s model_format=%s configured_imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s",
+            "perf config model_path=%s model_format=%s configured_imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s macos_det_window_scale=%s",
             model_path,
             model_format,
             self._config.model.imgsz,
@@ -330,6 +342,7 @@ class DetectionRuntime:
             remote_sink is not None,
             event_sink_enabled,
             triggers_enabled,
+            macos_detections_window_scale,
         )
 
         snapshot_episode_active = False
@@ -606,10 +619,39 @@ class DetectionRuntime:
                             }
                         )
 
-        ingest_thread = threading.Thread(target=ingest_loop, name="cds-ingest", daemon=True)
-        infer_thread = threading.Thread(target=infer_loop, name="cds-infer", daemon=True)
-        detect_thread = threading.Thread(target=detect_loop, name="cds-detect-logic", daemon=True)
-        event_thread = threading.Thread(target=event_loop, name="cds-events", daemon=True)
+        def _run_worker(
+            name: str,
+            target: Callable[[], None],
+            eof_event: threading.Event | None = None,
+        ) -> None:
+            try:
+                target()
+            except Exception:
+                self._logger.exception("%s thread failed", name)
+                if eof_event is not None:
+                    eof_event.set()
+                stop_event.set()
+
+        ingest_thread = threading.Thread(
+            target=lambda: _run_worker("cds-ingest", ingest_loop, ingest_eof),
+            name="cds-ingest",
+            daemon=True,
+        )
+        infer_thread = threading.Thread(
+            target=lambda: _run_worker("cds-infer", infer_loop, infer_eof),
+            name="cds-infer",
+            daemon=True,
+        )
+        detect_thread = threading.Thread(
+            target=lambda: _run_worker("cds-detect-logic", detect_loop, detect_eof),
+            name="cds-detect-logic",
+            daemon=True,
+        )
+        event_thread = threading.Thread(
+            target=lambda: _run_worker("cds-events", event_loop, None),
+            name="cds-events",
+            daemon=True,
+        )
         ingest_thread.start()
         infer_thread.start()
         detect_thread.start()

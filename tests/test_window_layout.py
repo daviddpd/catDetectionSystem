@@ -27,6 +27,13 @@ class WindowLayoutTests(unittest.TestCase):
         self.assertGreaterEqual(right.width, 480)
         self.assertGreaterEqual(right.height, 360)
 
+    def test_right_scale_reduces_detections_window_size(self) -> None:
+        left, right = compute_side_by_side_rects(1920, 1080, right_scale=0.25)
+        self.assertEqual(left.width, 928)
+        self.assertEqual(left.height, 928)
+        self.assertEqual(right.width, 240)
+        self.assertEqual(right.height, 232)
+
 
 if __name__ == "__main__":
     unittest.main()

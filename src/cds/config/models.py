@@ -46,6 +46,7 @@ class OutputConfig:
     detections_window_name: str = "cds-detections"
     detections_window_slots: int = 6
     detections_window_scale: float = 0.5
+    detections_window_macos_scale: float | None = None
     detections_buffer_frames: int = 0
     remote_enabled: bool = False
     remote_host: str = "0.0.0.0"
