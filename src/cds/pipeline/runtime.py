@@ -16,7 +16,6 @@ from cds.io.ingest import probe_decoder_path, select_ingest_backend
 from cds.io.output import DetectionsGallerySink, DisplaySink, JsonEventSink, MjpegSink
 from cds.monitoring import PeriodicStatsLogger, RuntimeIdentity, RuntimeMetrics
 from cds.pipeline.annotate import draw_overlays
-from cds.pipeline.detection_selection import select_primary_detection
 from cds.pipeline.detection_capture import DetectionCaptureManager
 from cds.pipeline.frame_queue import LatestFrameQueue
 from cds.pipeline.snapshot_gate import WindowSnapshotGate
@@ -29,6 +28,8 @@ _VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm"}
 
 
 def _is_video_source(source: str) -> bool:
+    if source.startswith(("rtsp://", "rtsps://", "http://", "https://", "udp://", "tcp://")):
+        return True
     try:
         return Path(source).suffix.lower() in _VIDEO_EXTENSIONS
     except Exception:
@@ -137,7 +138,6 @@ class DetectionRuntime:
                 )
 
         source_mode = ingest.source_mode()
-        is_live_source = source_mode == "live-stream"
         is_file_like_source = source_mode in {"video-file", "directory"}
 
         benchmark_requested = bool(self._config.ingest.benchmark)
@@ -152,13 +152,11 @@ class DetectionRuntime:
         if benchmark_active:
             clock_mode_effective = "asfast"
         elif clock_mode_requested == "auto":
-            clock_mode_effective = "asfast" if is_live_source else "source"
+            clock_mode_effective = "source"
         else:
             clock_mode_effective = clock_mode_requested
 
-        source_clock_enabled = (
-            clock_mode_effective == "source" and is_file_like_source and not benchmark_active
-        )
+        source_clock_enabled = clock_mode_effective == "source" and not benchmark_active
         sample_interval = (
             (1.0 / max(0.1, self._config.ingest.rate_limit_fps))
             if self._config.ingest.rate_limit_fps and not benchmark_active
@@ -176,7 +174,7 @@ class DetectionRuntime:
         )
         infer_queue: LatestFrameQueue[_InferPacket] = LatestFrameQueue(
             maxsize=self._config.ingest.queue_size,
-            drop_oldest=True,
+            drop_oldest=not benchmark_active,
         )
         render_queue: LatestFrameQueue[_InferPacket] = LatestFrameQueue(
             maxsize=self._config.ingest.queue_size,
@@ -311,7 +309,7 @@ class DetectionRuntime:
         else:
             model_format = "unknown"
         self._logger.info(
-            "perf config model_path=%s model_format=%s configured_imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s primary_detection_only=%s",
+            "perf config model_path=%s model_format=%s configured_imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s",
             model_path,
             model_format,
             self._config.model.imgsz,
@@ -332,7 +330,6 @@ class DetectionRuntime:
             remote_sink is not None,
             event_sink_enabled,
             triggers_enabled,
-            True,
         )
 
         snapshot_episode_active = False
@@ -516,8 +513,6 @@ class DetectionRuntime:
                 packet = infer_packet.packet
                 detections = infer_packet.detections
 
-                # Downstream detection logic always operates on a single best detection.
-                detections = select_primary_detection(detections)
                 _attach_detection_area_metrics(packet.frame, detections)
 
                 trigger_result = triggers.process(packet, detections, backend.name())
@@ -546,9 +541,13 @@ class DetectionRuntime:
                             detections=detections,
                         )
 
-                dropped = render_queue.put_latest(
-                    _InferPacket(packet=packet, detections=detections)
+                dropped = _enqueue_with_policy(
+                    render_queue,
+                    _InferPacket(packet=packet, detections=detections),
                 )
+                if stop_event.is_set():
+                    detect_eof.set()
+                    return
                 if dropped:
                     metrics.add_dropped(dropped)
 

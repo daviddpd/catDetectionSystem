@@ -16,6 +16,10 @@ echo " ================ Select Model ==========================="
 echo "Model: $MODEL"
 echo " ========================================================="
 
+
+
+
+
 #video_dir="/Volumes/camera/communitycats/referenceVideos/*.mp4"
 #video_dir=`ls -1 /Volumes/camera/communitycats/referenceVideos*/*.mp4 | sort -R | xargs`
 #video_dir=`ls -1 /Volumes/camera/communitycats/referenceVideos*/*.mp4 | xargs`
@@ -28,6 +32,7 @@ echo " ========================================================="
 #video_dir="/Users/dpd/Olives-prey-the-feathertoy.mov"
 # 0004-C3_01_20211002230814: Opossum false positive as a cat. 
 #video_dir="/Volumes/camera/communitycats/referenceVideos/0004-C3_01_20211002230814.mp4"
+
 
 
 video_dir="/Users/dpd/Movies/cds-demo-video.mp4"
