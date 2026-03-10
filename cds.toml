@@ -37,10 +37,10 @@ remote_enabled = false
 remote_host = "0.0.0.0"
 remote_port = 8080
 remote_path = "/stream.mjpg"
-detections_window_enabled = true
+detections_window_enabled = false
 
 [triggers.audio]
-enabled = true
+enabled = false
 cooldown_seconds = 60.0
 frames_detect_on = 2
 

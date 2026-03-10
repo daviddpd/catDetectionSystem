@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from cds.utils.window_layout import compute_side_by_side_rects
+from cds.utils.window_layout import compute_side_by_side_rects, compute_single_rect
 
 
 class WindowLayoutTests(unittest.TestCase):
@@ -33,6 +33,13 @@ class WindowLayoutTests(unittest.TestCase):
         self.assertEqual(left.height, 928)
         self.assertEqual(right.width, 240)
         self.assertEqual(right.height, 232)
+
+    def test_single_rect_matches_left_panel_defaults(self) -> None:
+        rect = compute_single_rect(1920, 1080)
+        self.assertEqual(rect.x, 24)
+        self.assertEqual(rect.y, 24)
+        self.assertEqual(rect.width, 928)
+        self.assertEqual(rect.height, 928)
 
 
 if __name__ == "__main__":

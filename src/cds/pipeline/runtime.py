@@ -24,7 +24,7 @@ from cds.pipeline.snapshot_gate import WindowSnapshotGate
 from cds.triggers import TriggerManager
 from cds.types import Detection, FramePacket
 from cds.utils import redact_uri_password
-from cds.utils.window_layout import place_windows_side_by_side
+from cds.utils.window_layout import place_single_window, place_windows_side_by_side
 
 _VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm"}
 
@@ -196,6 +196,10 @@ class DetectionRuntime:
         if not self._config.output.headless:
             display_sink = DisplaySink(window_name=self._config.output.window_name)
             display_sink.open()
+            if not place_single_window(display_sink.window_name):
+                self._logger.debug(
+                    "single window placement unavailable; using platform defaults"
+                )
 
             if self._config.output.remote_enabled:
                 remote_sink = MjpegSink(

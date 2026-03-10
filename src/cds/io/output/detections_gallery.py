@@ -25,6 +25,9 @@ class DetectionsGallerySink:
         self._page = 0
         self._last_render_at = 0.0
         self._render_interval_s = 0.1
+        self._tile_cache: dict[tuple[str, int, str], Any] = {}
+        self._last_canvas: Any | None = None
+        self._last_signature: tuple[Any, ...] | None = None
 
     def open(self) -> None:
         if self._open:
@@ -64,6 +67,35 @@ class DetectionsGallerySink:
             )
         return canvas
 
+    def _snapshot_key(self, snapshot: DetectionSnapshot) -> tuple[str, int, str]:
+        return (
+            str(snapshot.source),
+            int(snapshot.frame_id),
+            snapshot.timestamp.isoformat(),
+        )
+
+    def _prune_cache(self, snapshots: list[DetectionSnapshot]) -> None:
+        valid = {self._snapshot_key(snapshot) for snapshot in snapshots}
+        stale = [key for key in self._tile_cache if key not in valid]
+        for key in stale:
+            del self._tile_cache[key]
+
+    def _render_tile(self, snapshot: DetectionSnapshot) -> Any:
+        key = self._snapshot_key(snapshot)
+        cached = self._tile_cache.get(key)
+        if cached is not None:
+            return cached
+        annotated = self._draw_detection_overlays(snapshot.frame, snapshot.detections)
+        scaled = cv2.resize(
+            annotated,
+            None,
+            fx=self._scale,
+            fy=self._scale,
+            interpolation=cv2.INTER_AREA,
+        )
+        self._tile_cache[key] = scaled
+        return scaled
+
     def _select_page(self, snapshots: list[DetectionSnapshot]) -> list[DetectionSnapshot]:
         if not snapshots:
             self._page = 0
@@ -83,18 +115,9 @@ class DetectionsGallerySink:
             cv2.putText(canvas, "Keys: [ older   ] newer   0 reset", (20, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 1, cv2.LINE_AA)
             return canvas
 
-        resized: list[Any] = []
         cell_w = 0
         cell_h = 0
-        for img in tiles:
-            scaled = cv2.resize(
-                img,
-                None,
-                fx=self._scale,
-                fy=self._scale,
-                interpolation=cv2.INTER_AREA,
-            )
-            resized.append(scaled)
+        for scaled in tiles:
             h, w = scaled.shape[:2]
             cell_h = max(cell_h, h)
             cell_w = max(cell_w, w)
@@ -107,7 +130,7 @@ class DetectionsGallerySink:
         canvas_w = cols * cell_w + (cols + 1) * pad
         canvas = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)
 
-        for idx, img in enumerate(resized):
+        for idx, img in enumerate(tiles):
             row = idx // cols
             col = idx % cols
             y = header_h + pad + row * (cell_h + pad)
@@ -136,18 +159,30 @@ class DetectionsGallerySink:
             return
         self._last_render_at = now
 
+        self._prune_cache(snapshots)
         page = self._select_page(snapshots)
-        tiles: list[Any] = []
-        for snapshot in page:
-            annotated = self._draw_detection_overlays(snapshot.frame, snapshot.detections)
-            tiles.append(annotated)
+        signature = (
+            len(snapshots),
+            self._page,
+            tuple(self._snapshot_key(snapshot) for snapshot in page),
+        )
+        if self._last_canvas is not None and signature == self._last_signature:
+            cv2.imshow(self._window_name, self._last_canvas)
+            return
+
+        tiles = [self._render_tile(snapshot) for snapshot in page]
         canvas = self._tile(tiles, total_count=len(snapshots))
+        self._last_signature = signature
+        self._last_canvas = canvas
         cv2.imshow(self._window_name, canvas)
 
     def close(self) -> None:
         if self._open:
             cv2.destroyWindow(self._window_name)
             self._open = False
+        self._tile_cache.clear()
+        self._last_canvas = None
+        self._last_signature = None
 
     @property
     def window_name(self) -> str:

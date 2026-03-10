@@ -48,6 +48,35 @@ def compute_side_by_side_rects(
     return left, right
 
 
+def compute_single_rect(
+    screen_width: int,
+    screen_height: int,
+    *,
+    margin: int = 24,
+    scale: float = 1.0,
+) -> WindowRect:
+    left_rect, _ = compute_side_by_side_rects(
+        screen_width,
+        screen_height,
+        margin=margin,
+        gap=16,
+    )
+    safe_scale = max(0.10, min(1.0, float(scale)))
+    if safe_scale >= 0.999:
+        return left_rect
+
+    scaled_w = max(320, int(left_rect.width * safe_scale))
+    scaled_h = max(240, int(left_rect.height * safe_scale))
+    scaled_x = left_rect.x + max(0, (left_rect.width - scaled_w) // 2)
+    scaled_y = left_rect.y + max(0, (left_rect.height - scaled_h) // 2)
+    return WindowRect(
+        x=scaled_x,
+        y=scaled_y,
+        width=scaled_w,
+        height=scaled_h,
+    )
+
+
 def detect_screen_size() -> tuple[int, int]:
     try:
         import tkinter  # noqa: PLC0415
@@ -87,6 +116,30 @@ def place_windows_side_by_side(
         cv2.moveWindow(left_window, left_rect.x, left_rect.y)
         cv2.resizeWindow(right_window, right_rect.width, right_rect.height)
         cv2.moveWindow(right_window, right_rect.x, right_rect.y)
+        return True
+    except Exception:
+        return False
+
+
+def place_single_window(
+    window_name: str,
+    *,
+    window_scale: float = 1.0,
+) -> bool:
+    try:
+        import cv2  # noqa: PLC0415
+    except Exception:
+        return False
+
+    screen_w, screen_h = detect_screen_size()
+    rect = compute_single_rect(
+        screen_w,
+        screen_h,
+        scale=window_scale,
+    )
+    try:
+        cv2.resizeWindow(window_name, rect.width, rect.height)
+        cv2.moveWindow(window_name, rect.x, rect.y)
         return True
     except Exception:
         return False
