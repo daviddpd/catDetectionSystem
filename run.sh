@@ -8,6 +8,14 @@ SELECT_SRC=$1
 WMD="artifacts/models/x-community-cats-20260309-065444"
 
 OS=`uname -o`
+BENCHMARK=""
+
+if [ -n "$_CDS_BENCHMARK" ]; then
+    BENCHMARK="--benchmark"
+fi
+if [ -n "$_CDS_NO_EVENT" ]; then
+    NO_EVENT="--no-event-stdout"
+fi
 
 if [ $OS == "Darwin" ]; then
     MODEL="$WMD/exports/best.mlpackage"
@@ -69,8 +77,7 @@ for video in $src; do
     ./cds detect --uri $video \
     --model-path $MODEL \
     --imgsz $IMGSIZE --nms $NMS \
-    --confidence $CONFIDENCE \
-    --benchmark --no-event-stdout
+    --confidence $CONFIDENCE $BENCHMARK $NO_EVENT
 #         --confidence-min 0.50 \
 #         --export-frames \
 #         --export-frames-dir artifacts/exports/active-learning-2026.02.24 \
