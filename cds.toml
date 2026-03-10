@@ -37,7 +37,7 @@ remote_enabled = false
 remote_host = "0.0.0.0"
 remote_port = 8080
 remote_path = "/stream.mjpg"
-detections_window_enabled = false
+detections_window_enabled = true
 
 [triggers.audio]
 enabled = false
@@ -51,7 +51,7 @@ opossum = "assests/mixkit-video-game-mystery-alert-234.wav"
 raccoon = "assests/mixkit-police-short-whistle-615.wav"
 
 [triggers.hooks]
-enabled = false
+enabled = true
 allowlist = ["/usr/local/bin/cds-hook"]
 max_workers = 4
 # default: 10 consecutive inferred frames to latch ON
