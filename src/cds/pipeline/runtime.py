@@ -175,11 +175,16 @@ class DetectionRuntime:
         )
         infer_queue: LatestFrameQueue[_InferPacket] = LatestFrameQueue(
             maxsize=self._config.ingest.queue_size,
+            drop_oldest=True,
+        )
+        render_queue: LatestFrameQueue[_InferPacket] = LatestFrameQueue(
+            maxsize=self._config.ingest.queue_size,
             drop_oldest=not benchmark_active,
         )
         stop_event = threading.Event()
         ingest_eof = threading.Event()
         infer_eof = threading.Event()
+        detect_eof = threading.Event()
         source_shape_logged = threading.Event()
         effective_input_logged = threading.Event()
 
@@ -436,7 +441,6 @@ class DetectionRuntime:
                     metrics.add_dropped(dropped)
 
         def infer_loop() -> None:
-            nonlocal snapshot_episode_active
             while True:
                 if stop_event.is_set() and frame_queue.empty():
                     infer_eof.set()
@@ -474,9 +478,38 @@ class DetectionRuntime:
                                 backend.name(),
                             )
                             effective_input_logged.set()
-                _attach_detection_area_metrics(packet.frame, detections)
-                detections = select_primary_detection(detections)
                 metrics.mark_infer()
+
+                dropped = _enqueue_with_policy(
+                    infer_queue,
+                    _InferPacket(packet=packet, detections=detections),
+                )
+                if stop_event.is_set():
+                    infer_eof.set()
+                    return
+                if dropped:
+                    metrics.add_dropped(dropped)
+
+        def detect_loop() -> None:
+            nonlocal snapshot_episode_active
+            while True:
+                if stop_event.is_set() and infer_queue.empty():
+                    detect_eof.set()
+                    return
+
+                infer_packet = infer_queue.get(timeout=0.1)
+                if infer_packet is None:
+                    if infer_eof.is_set() and infer_queue.empty():
+                        detect_eof.set()
+                        return
+                    continue
+
+                packet = infer_packet.packet
+                detections = infer_packet.detections
+
+                # Downstream detection logic always operates on a single best detection.
+                detections = select_primary_detection(detections)
+                _attach_detection_area_metrics(packet.frame, detections)
 
                 trigger_result = triggers.process(packet, detections, backend.name())
                 if capture_manager is not None:
@@ -504,13 +537,9 @@ class DetectionRuntime:
                             detections=detections,
                         )
 
-                dropped = _enqueue_with_policy(
-                    infer_queue,
-                    _InferPacket(packet=packet, detections=detections),
+                dropped = render_queue.put_latest(
+                    _InferPacket(packet=packet, detections=detections)
                 )
-                if stop_event.is_set():
-                    infer_eof.set()
-                    return
                 if dropped:
                     metrics.add_dropped(dropped)
 
@@ -541,7 +570,7 @@ class DetectionRuntime:
 
                 event_packet = event_queue.get(timeout=0.1)
                 if event_packet is None:
-                    if infer_eof.is_set() and event_queue.empty():
+                    if detect_eof.is_set() and event_queue.empty():
                         return
                     continue
 
@@ -571,9 +600,11 @@ class DetectionRuntime:
 
         ingest_thread = threading.Thread(target=ingest_loop, name="cds-ingest", daemon=True)
         infer_thread = threading.Thread(target=infer_loop, name="cds-infer", daemon=True)
+        detect_thread = threading.Thread(target=detect_loop, name="cds-detect-logic", daemon=True)
         event_thread = threading.Thread(target=event_loop, name="cds-events", daemon=True)
         ingest_thread.start()
         infer_thread.start()
+        detect_thread.start()
         event_thread.start()
 
         stats_logger = PeriodicStatsLogger(
@@ -588,15 +619,15 @@ class DetectionRuntime:
         try:
             render_enabled = display_sink is not None or remote_sink is not None
             while not stop_event.is_set():
-                infer_packet = infer_queue.get(timeout=0.1)
-                if infer_packet is None:
-                    if infer_eof.is_set() and infer_queue.empty():
+                render_packet = render_queue.get(timeout=0.1)
+                if render_packet is None:
+                    if detect_eof.is_set() and render_queue.empty():
                         break
                     stats_logger.maybe_emit()
                     continue
 
-                packet = infer_packet.packet
-                detections = infer_packet.detections
+                packet = render_packet.packet
+                detections = render_packet.detections
 
                 frame_age_ms = max(
                     0.0,
@@ -632,6 +663,7 @@ class DetectionRuntime:
             stop_event.set()
             ingest_thread.join(timeout=2)
             infer_thread.join(timeout=2)
+            detect_thread.join(timeout=2)
             event_thread.join(timeout=2)
             ingest.close()
             triggers.close()
