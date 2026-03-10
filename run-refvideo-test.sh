@@ -35,8 +35,11 @@ echo " ========================================================="
 
 
 
-video_dir="/Users/dpd/Movies/cds-demo-video.mp4"
-#video_dir="/z/camera/communitycats/cds-demo-video.mp4"
+if [ $OS == "Darwin" ]; then
+    video_dir="/Users/dpd/Movies/cds-demo-video.mp4"
+else
+    video_dir="/z/camera/communitycats/cds-demo-video.mp4"
+fi
 
 for video in $video_dir; do
     echo "$video"
