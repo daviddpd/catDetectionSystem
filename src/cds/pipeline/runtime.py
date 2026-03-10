@@ -181,7 +181,7 @@ class DetectionRuntime:
         )
         render_queue: LatestFrameQueue[_InferPacket] = LatestFrameQueue(
             maxsize=self._config.ingest.queue_size,
-            drop_oldest=not benchmark_active,
+            drop_oldest=True,
         )
         stop_event = threading.Event()
         ingest_eof = threading.Event()
@@ -529,6 +529,11 @@ class DetectionRuntime:
 
                 packet = infer_packet.packet
                 detections = infer_packet.detections
+                frame_age_ms = max(
+                    0.0,
+                    (time.monotonic() - packet.created_monotonic_s) * 1000.0,
+                )
+                metrics.set_frame_age_ms(frame_age_ms)
 
                 _attach_detection_area_metrics(packet.frame, detections)
 
@@ -558,15 +563,15 @@ class DetectionRuntime:
                             detections=detections,
                         )
 
-                dropped = _enqueue_with_policy(
-                    render_queue,
+                dropped = render_queue.put_latest(
                     _InferPacket(packet=packet, detections=detections),
                 )
-                if stop_event.is_set():
-                    detect_eof.set()
-                    return
                 if dropped:
-                    metrics.add_dropped(dropped)
+                    self._logger.debug(
+                        "render queue saturated dropped=%d frame_id=%d",
+                        dropped,
+                        packet.frame_id,
+                    )
 
                 if event_queue is not None:
                     dropped_event = event_queue.put_latest(
@@ -682,12 +687,6 @@ class DetectionRuntime:
 
                 packet = render_packet.packet
                 detections = render_packet.detections
-
-                frame_age_ms = max(
-                    0.0,
-                    (datetime.now() - packet.timestamp).total_seconds() * 1000.0,
-                )
-                metrics.set_frame_age_ms(frame_age_ms)
 
                 if render_enabled:
                     snapshot = metrics.snapshot()

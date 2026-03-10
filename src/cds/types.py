@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+import time
 from typing import Any
 
 
@@ -36,6 +37,7 @@ class FramePacket:
     frame: Any
     source: str
     timestamp: datetime
+    created_monotonic_s: float = field(default_factory=time.monotonic)
 
 
 @dataclass
