@@ -18,6 +18,7 @@ from cds.monitoring import PeriodicStatsLogger, RuntimeIdentity, RuntimeMetrics
 from cds.pipeline.annotate import draw_overlays
 from cds.pipeline.detection_capture import DetectionCaptureManager
 from cds.pipeline.frame_queue import LatestFrameQueue
+from cds.pipeline.snapshot_gate import WindowSnapshotGate
 from cds.triggers import TriggerManager
 from cds.types import Detection, FramePacket
 from cds.utils import redact_uri_password
@@ -220,9 +221,40 @@ class DetectionRuntime:
             int(trigger_config.audio.frames_detect_on if trigger_config.audio.enabled else 1),
             int(trigger_config.hooks.frames_detect_on if trigger_config.hooks.enabled else 1),
         )
+        window_detect_on = max(
+            1,
+            int(trigger_config.audio.frames_detect_on),
+            int(trigger_config.hooks.frames_detect_on),
+        )
+        window_detect_off = max(
+            1,
+            int(
+                trigger_config.audio.frames_detect_off
+                if trigger_config.audio.frames_detect_off is not None
+                else max(1, int(trigger_config.audio.frames_detect_on) // 2)
+            ),
+            int(
+                trigger_config.hooks.frames_detect_off
+                if trigger_config.hooks.frames_detect_off is not None
+                else max(1, int(trigger_config.hooks.frames_detect_on) // 2)
+            ),
+        )
+        window_min_area_pixels = max(
+            0,
+            int(trigger_config.audio.min_area_pixels),
+            int(trigger_config.hooks.min_area_pixels),
+        )
+        window_min_area_percent = max(
+            0.0,
+            float(trigger_config.audio.min_area_percent),
+            float(trigger_config.hooks.min_area_percent),
+        )
         capture_buffer_frames = int(self._config.output.detections_buffer_frames or 0)
         if capture_buffer_frames <= 0:
-            capture_buffer_frames = max(1, default_detect_on * 3)
+            baseline_detect_on = default_detect_on
+            if detections_window_enabled and not triggers_enabled:
+                baseline_detect_on = max(baseline_detect_on, window_detect_on)
+            capture_buffer_frames = max(1, baseline_detect_on * 3)
 
         export_frames_requested = bool(self._config.output.export_frames)
         export_frames_active = bool(export_frames_requested and benchmark_active)
@@ -288,6 +320,21 @@ class DetectionRuntime:
         )
 
         snapshot_episode_active = False
+        fallback_snapshot_gate: WindowSnapshotGate | None = None
+        if detections_window_enabled and not triggers_enabled:
+            fallback_snapshot_gate = WindowSnapshotGate(
+                on_frames=window_detect_on,
+                off_frames=window_detect_off,
+                min_area_pixels=window_min_area_pixels,
+                min_area_percent=window_min_area_percent,
+            )
+            self._logger.info(
+                "detections window gate active without triggers on_frames=%d off_frames=%d min_area_px=%d min_area_pct=%.3f",
+                window_detect_on,
+                window_detect_off,
+                window_min_area_pixels,
+                window_min_area_percent,
+            )
 
         def _enqueue_with_policy(queue_obj: LatestFrameQueue, item: object) -> int:
             if not benchmark_active:
@@ -430,15 +477,21 @@ class DetectionRuntime:
 
                 trigger_result = triggers.process(packet, detections, backend.name())
                 if capture_manager is not None:
-                    if trigger_result.activated_detections and not snapshot_episode_active:
+                    activated_detections = trigger_result.activated_detections
+                    any_active = trigger_result.any_active
+
+                    if fallback_snapshot_gate is not None:
+                        activated_detections, any_active = fallback_snapshot_gate.observe(detections)
+
+                    if activated_detections and not snapshot_episode_active:
                         capture_manager.submit_activation_snapshot(
                             packet=packet,
                             frame=packet.frame,
                             detections=detections,
-                            activated_detections=trigger_result.activated_detections,
+                            activated_detections=activated_detections,
                         )
                         snapshot_episode_active = True
-                    if not trigger_result.any_active:
+                    if not any_active:
                         snapshot_episode_active = False
 
                     if export_frames_active and capture_manager.export_enabled():
