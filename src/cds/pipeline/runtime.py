@@ -16,6 +16,7 @@ from cds.io.ingest import probe_decoder_path, select_ingest_backend
 from cds.io.output import DetectionsGallerySink, DisplaySink, JsonEventSink, MjpegSink
 from cds.monitoring import PeriodicStatsLogger, RuntimeIdentity, RuntimeMetrics
 from cds.pipeline.annotate import draw_overlays
+from cds.pipeline.detection_selection import select_primary_detection
 from cds.pipeline.detection_capture import DetectionCaptureManager
 from cds.pipeline.frame_queue import LatestFrameQueue
 from cds.pipeline.snapshot_gate import WindowSnapshotGate
@@ -296,7 +297,7 @@ class DetectionRuntime:
         else:
             model_format = "unknown"
         self._logger.info(
-            "perf config model_path=%s model_format=%s configured_imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s",
+            "perf config model_path=%s model_format=%s configured_imgsz=%d backend=%s device=%s ingest=%s source_mode=%s clock=%s benchmark=%s queue_size=%d queue_policy=%s rate_limit_fps=%s sample_interval_s=%s display=%s detections_window=%s detections_buffer_frames=%d export_frames=%s remote_mjpeg=%s events=%s triggers=%s primary_detection_only=%s",
             model_path,
             model_format,
             self._config.model.imgsz,
@@ -317,6 +318,7 @@ class DetectionRuntime:
             remote_sink is not None,
             event_sink_enabled,
             triggers_enabled,
+            True,
         )
 
         snapshot_episode_active = False
@@ -473,6 +475,7 @@ class DetectionRuntime:
                             )
                             effective_input_logged.set()
                 _attach_detection_area_metrics(packet.frame, detections)
+                detections = select_primary_detection(detections)
                 metrics.mark_infer()
 
                 trigger_result = triggers.process(packet, detections, backend.name())
