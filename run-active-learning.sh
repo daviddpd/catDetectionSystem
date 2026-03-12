@@ -93,13 +93,14 @@ echo " ========================================================="
 for video in $src; do
     echo "$video"
     ./cds detect --uri $video \
-    --model-path $MODEL \
+    --model-path $MODEL $OPTS \
     --imgsz $IMGSIZE --nms $NMS \
-    --confidence $CONFIDENCE $BENCHMARK $NO_EVENT $OPTS
-#         --confidence-min 0.50 \
-#         --export-frames \
-#         --export-frames-dir artifacts/exports/active-learning-2026.02.24 \
-#         --export-frames-sample-pct 25 \
+    --benchmark \
+    --confidence 0.59 \
+    --confidence-min 0.75 \
+    --export-frames \
+    --export-frames-dir artifacts/exports/active-learning-2026.03.10 \
+    --export-frames-sample-pct 50
 done
 
 
