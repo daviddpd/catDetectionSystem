@@ -1,8 +1,8 @@
 #!/bin/bash 
 
-RUN_DIR="$(ls -td artifacts/models/communitycats-prod-* | head -1)"
+RUN_DIR="artifacts/models/x-community-cats-20260313-002814"
 
-#./cds evaluate --config config/eval.yaml --model "$RUN_DIR/ultralytics_train/weights/best.pt"
+./cds evaluate --config config/eval.yaml --model "$RUN_DIR/ultralytics_train/weights/best.pt"
 
 ./cds export \
   --config config/export.yaml \
