@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import re
-import shutil
 import struct
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -260,6 +259,11 @@ def _extract_timestamp_from_name(path: Path) -> str | None:
     return None
 
 
+def _write_label_file(label_path: Path, lines: list[str]) -> None:
+    label_path.parent.mkdir(parents=True, exist_ok=True)
+    label_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
 def convert_voc_xml_to_yolo(
     xml_root: Path,
     output_root: Path,
@@ -271,11 +275,6 @@ def convert_voc_xml_to_yolo(
     if not class_names:
         raise ValueError("convert_voc_xml_to_yolo requires non-empty class_names")
     class_to_id = {name: idx for idx, name in enumerate(class_names)}
-
-    labels_dir = output_root / "labels_raw"
-    images_dir = output_root / "images_raw"
-    labels_dir.mkdir(parents=True, exist_ok=True)
-    images_dir.mkdir(parents=True, exist_ok=True)
 
     stats = ConversionStats(
         xml_files=0,
@@ -355,25 +354,21 @@ def convert_voc_xml_to_yolo(
             lines.append(_to_yolo_line(class_to_id[class_name], width, height, (xmin, ymin, xmax, ymax)))
 
         source_id = _safe_source_id(image_path)
-        image_name = f"{source_id}_{image_path.name}"
-        label_name = f"{Path(image_name).stem}.txt"
-        image_dest = images_dir / image_name
-        label_dest = labels_dir / label_name
+        xml_label_path = xml_path.with_suffix(".txt")
+        image_label_path = image_path.with_suffix(".txt")
 
-        if copy_images:
-            if image_dest != image_path:
-                shutil.copy2(image_path, image_dest)
-        else:
-            image_dest = image_path
+        _write_label_file(xml_label_path, lines)
+        if image_label_path.resolve() != xml_label_path.resolve():
+            _write_label_file(image_label_path, lines)
 
-        label_dest.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
         stats.labels_written += 1
 
         manifest_rows.append(
             {
                 "xml": str(xml_path),
-                "image": str(image_dest),
-                "label": str(label_dest),
+                "image": str(image_path),
+                "label": str(xml_label_path),
+                "image_label": str(image_label_path),
                 "source_id": source_id,
                 "timestamp": _extract_timestamp_from_name(image_path),
             }

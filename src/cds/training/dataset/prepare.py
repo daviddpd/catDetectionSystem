@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -15,21 +14,57 @@ def _write_split_paths(paths: list[Path], output: Path) -> None:
     output.write_text("\n".join(str(p.resolve()) for p in paths) + "\n", encoding="utf-8")
 
 
-def _copy_split(split_name: str, image_paths: list[Path], output_root: Path) -> None:
+def _safe_link_name(record: dict[str, Any]) -> tuple[str, str]:
+    source_id = str(record.get("source_id", "")).strip()
+    image_path = Path(record["image"])
+    if source_id:
+        image_name = f"{source_id}_{image_path.name}"
+    else:
+        image_name = image_path.name
+    label_name = f"{Path(image_name).stem}.txt"
+    return image_name, label_name
+
+
+def _reset_split_dir(path: Path) -> None:
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+        return
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            _reset_split_dir(child)
+            child.rmdir()
+        else:
+            child.unlink()
+
+
+def _symlink_or_replace(target: Path, source: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() or target.is_symlink():
+        target.unlink()
+    target.symlink_to(source.resolve())
+
+
+def _link_split(split_name: str, records: list[dict[str, Any]], output_root: Path) -> list[Path]:
     image_dest = output_root / "images" / split_name
     label_dest = output_root / "labels" / split_name
-    image_dest.mkdir(parents=True, exist_ok=True)
-    label_dest.mkdir(parents=True, exist_ok=True)
+    _reset_split_dir(image_dest)
+    _reset_split_dir(label_dest)
 
-    for image_path in image_paths:
-        dest_image = image_dest / image_path.name
-        if dest_image != image_path:
-            shutil.copy2(image_path, dest_image)
-        raw_label = output_root / "labels_raw" / f"{image_path.stem}.txt"
-        if raw_label.exists():
-            shutil.copy2(raw_label, label_dest / raw_label.name)
+    linked_images: list[Path] = []
+    for record in records:
+        image_path = Path(record["image"])
+        label_path = Path(record["label"])
+        image_name, label_name = _safe_link_name(record)
+
+        dest_image = image_dest / image_name
+        dest_label = label_dest / label_name
+        _symlink_or_replace(dest_image, image_path)
+        if label_path.exists():
+            _symlink_or_replace(dest_label, label_path)
         else:
-            (label_dest / f"{image_path.stem}.txt").write_text("", encoding="utf-8")
+            dest_label.write_text("", encoding="utf-8")
+        linked_images.append(dest_image)
+    return linked_images
 
 
 def _write_data_yaml(output_root: Path, class_names: list[str]) -> Path:
@@ -78,25 +113,35 @@ def prepare_dataset_pipeline(
 
     records = conversion["manifest"]
     image_paths = [Path(row["image"]) for row in records]
+    record_by_image = {str(Path(row["image"]).resolve()): row for row in records}
 
     if split_mode == "time-aware":
-        splits = time_aware_split(
+        split_paths = time_aware_split(
             records=records,
             train_ratio=train_ratio,
             val_ratio=val_ratio,
             test_ratio=test_ratio,
         )
     else:
-        splits = deterministic_split(
+        split_paths = deterministic_split(
             image_paths=image_paths,
             train_ratio=train_ratio,
             val_ratio=val_ratio,
             test_ratio=test_ratio,
         )
 
-    for split_name, split_paths in splits.items():
-        _copy_split(split_name, split_paths, output_root)
-        _write_split_paths(split_paths, output_root / "splits" / f"{split_name}.txt")
+    split_records: dict[str, list[dict[str, Any]]] = {}
+    linked_split_paths: dict[str, list[Path]] = {}
+    for split_name, split_image_paths in split_paths.items():
+        rows: list[dict[str, Any]] = []
+        for image_path in split_image_paths:
+            row = record_by_image.get(str(Path(image_path).resolve()))
+            if row is None:
+                continue
+            rows.append(row)
+        split_records[split_name] = rows
+        linked_split_paths[split_name] = _link_split(split_name, rows, output_root)
+        _write_split_paths(linked_split_paths[split_name], output_root / "splits" / f"{split_name}.txt")
 
     data_yaml = _write_data_yaml(output_root, class_names)
     classes_file = _write_classes_file(output_root, class_names)
@@ -108,7 +153,7 @@ def prepare_dataset_pipeline(
     manifest_payload = {
         "conversion": conversion["stats"],
         "split_mode": split_mode,
-        "split_sizes": {k: len(v) for k, v in splits.items()},
+        "split_sizes": {k: len(v) for k, v in split_records.items()},
         "class_names": class_names,
         "classes_file": str(classes_file),
         "data_yaml": str(data_yaml),

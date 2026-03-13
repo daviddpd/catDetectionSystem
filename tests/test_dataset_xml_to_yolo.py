@@ -72,6 +72,10 @@ class XmlToYoloConversionTests(unittest.TestCase):
             label_path = Path(result["manifest"][0]["label"])
             self.assertTrue(label_path.exists())
             self.assertTrue(label_path.read_text(encoding="utf-8").strip().startswith("0 "))
+            self.assertEqual(label_path, xml_path.with_suffix(".txt"))
+            image_label_path = Path(result["manifest"][0]["image_label"])
+            self.assertTrue(image_label_path.exists())
+            self.assertEqual(image_label_path.resolve(), image_path.with_suffix(".txt").resolve())
 
     def test_skips_pair_when_size_cannot_be_recovered(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
