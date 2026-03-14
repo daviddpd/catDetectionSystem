@@ -2,7 +2,7 @@ model:
   path: artifacts/models/latest/checkpoints/best.pt
 
 dataset:
-  data_yaml: dataset/data.yaml
+  data_yaml: /z/camera/communitycats/custom_data/imagebyclass-2026-03-12/data.yaml
   split: val
 
 eval:
@@ -22,6 +22,7 @@ gating:
   recall_thresholds:
     cat: 0.65
     dog: 0.60
+    person: 0.6
     raccoon: 0.60
     opossum: 0.60
     skunk: 0.60

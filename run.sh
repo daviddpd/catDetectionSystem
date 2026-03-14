@@ -6,6 +6,7 @@ SELECT_SRC=$1
 
 # Working Model artifacts directory
 WMD="artifacts/models/x-community-cats-20260309-065444"
+WMD="artifacts/models/x-community-cats-20260313-002814"
 
 OS=`uname -o`
 BENCHMARK=""
@@ -21,19 +22,27 @@ if [ $OS == "Darwin" ]; then
     MODEL="$WMD/exports/best.mlpackage"
     IMGSIZE=320 
     NMS=0.5
-    CONFIDENCE=0.25
+    CONFIDENCE=0.52
     MOUNTPT="/Volumes"
 else
     MODEL="$WMD/rknn/model.toolkit2.rknn"
+    if [ ! -f "$MODEL" ]; then
+	    MODEL="$WMD/rknn/model.toolkit2.vendor.rknn"
+	    if [ ! -f "$MODEL" ]; then
+		  echo
+		  echo " Failed to find the rknn model"
+		  echo
+	    fi
+    fi
     IMGSIZE=320 
-    NMS=0.5
-    CONFIDENCE=0.5
+    NMS=0.3
+    CONFIDENCE=0.52
     MOUNTPT="/z"
 fi
 
-MODEL="YOLOv3.mlmodel"
-IMGSIZE=416
-OPTS="--labels-path config/yolo3-classes.txt "
+#MODEL="YOLOv3.mlmodel"
+#IMGSIZE=416
+#OPTS="--labels-path config/yolo3-classes.txt "
 
 demo_video_path="/Users/dpd/Movies/cds-demo-video.mp4 /z/camera/communitycats/cds-demo-video.mp4"
 video_ref_dir="$MOUNTPT/camera/communitycats/referenceVideos $MOUNTPT/camera/communitycats/referenceVideos2"

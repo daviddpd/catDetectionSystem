@@ -47,7 +47,8 @@ for video in $video_dir; do
     --model-path $MODEL \
     --imgsz 320 --nms 0.5 \
     --confidence 0.5 \
-    --benchmark --no-event-stdout
+    --no-event-stdout
+    #--benchmark --no-event-stdout
 #         --confidence-min 0.50 \
 #         --export-frames \
 #         --export-frames-dir artifacts/exports/active-learning-2026.02.24 \

@@ -40,9 +40,9 @@ remote_path = "/stream.mjpg"
 detections_window_enabled = true
 
 [triggers.audio]
-enabled = false
+enabled = true
 cooldown_seconds = 60.0
-frames_detect_on = 2
+frames_detect_on = 12
 
 [triggers.audio.class_to_audio]
 cat = "assests/Meow-cat-sound-effect.mp3"
