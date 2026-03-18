@@ -8,7 +8,7 @@ from cds.config.loader import load_runtime_config
 
 
 class ConfigLoaderTests(unittest.TestCase):
-    def test_headless_forces_remote_off_and_event_stdout_off(self) -> None:
+    def test_headless_keeps_remote_enabled_and_disables_event_stdout(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             config_file = root / "cds.json"
@@ -30,7 +30,7 @@ class ConfigLoaderTests(unittest.TestCase):
             config = load_runtime_config(repo_root=root, config_path=str(config_file))
 
             self.assertTrue(config.output.headless)
-            self.assertFalse(config.output.remote_enabled)
+            self.assertTrue(config.output.remote_enabled)
             self.assertFalse(config.monitoring.event_stdout)
 
     def test_ingest_clock_and_benchmark_overrides(self) -> None:

@@ -1,11 +1,14 @@
 #!/bin/sh
 
+set -x 
 
 DATASET="/Users/dpd/Documents/projects/communitycats/imagebyclass"
-OUTPUTROOT="/Users/dpd/Documents/projects/communitycats/imagebyclass-2026-03-12"
+OUTPUTROOT="/Users/dpd/Documents/projects/communitycats/imagebyclass-2026-03-15"
 
 # Working Model artifacts directory
 WMD="artifacts/models/x-community-cats-20260309-065444"
+WMD="artifacts/models/x-community-cats-20260313-002814"
+
 OS=`uname -o`
 
 if [ $OS == "Darwin" ]; then
@@ -24,18 +27,17 @@ else
 fi
 
 
-# ./cds dataset prepare \
-#   --xml-root $DATASET \
-#   --image-root $DATASET \
-#   --output-root $OUTPUTROOT \
-#   --config $DATASET/config/dataset.yaml \
-#   --split-mode deterministic
-# 
-# ./cds dataset validate --dataset-root $OUTPUTROOT --classes config/classes.txt 
-# 
+./cds dataset prepare \
+  --xml-root $DATASET \
+  --image-root $DATASET \
+  --output-root $OUTPUTROOT \
+  --config $DATASET/config/dataset.yaml \
+  --split-mode deterministic
+
+./cds dataset validate --dataset-root $OUTPUTROOT --classes config/classes.txt 
+ 
 ./cds train --config $DATASET/config/train.yaml \
             --dataset $OUTPUTROOT/data.yaml \
             --model $MODEL \
             --device mps \
             --export-targets all
-            

@@ -7,6 +7,7 @@ SELECT_SRC=$1
 # Working Model artifacts directory
 WMD="artifacts/models/x-community-cats-20260309-065444"
 WMD="artifacts/models/x-community-cats-20260313-002814"
+WMD="artifacts/models/x-community-cats-20260316-084322"
 
 OS=`uname -o`
 BENCHMARK=""
@@ -36,15 +37,12 @@ else
     fi
     IMGSIZE=320 
     NMS=0.3
-    CONFIDENCE=0.52
+    CONFIDENCE=0.72
     MOUNTPT="/z"
 fi
 
-#MODEL="YOLOv3.mlmodel"
-#IMGSIZE=416
-#OPTS="--labels-path config/yolo3-classes.txt "
 
-demo_video_path="/Users/dpd/Movies/cds-demo-video.mp4 /z/camera/communitycats/cds-demo-video.mp4"
+demo_video_path="/Users/dpd/Movies/cds-demo-video.mp4"
 video_ref_dir="$MOUNTPT/camera/communitycats/referenceVideos $MOUNTPT/camera/communitycats/referenceVideos2"
 
 echo " ================ Model ================================== "
@@ -55,6 +53,19 @@ echo " ========================================================="
 src=""
 
 case $SELECT_SRC in
+    yolo3)
+        MODEL="YOLOv3.mlmodel"
+        IMGSIZE=416
+        OPTS="--labels-path config/yolo3-classes.txt"
+        if [ -n "$2" ]; then
+            if [ -d "$2" ]; then
+                files=`find $2 -name '*.m[pk][4v]' |  xargs`
+                src="$src $files"
+            elif [ -f "$2" ]; then
+                src="$2"
+            fi
+        fi
+        ;;
     [cC]1|tplink)
         src='rtsp://admin:cwvqYgGn4vjGN3oKYdVBj@c1.dpdtech.com:554/h264Preview_01_main'
         ;;
@@ -94,6 +105,24 @@ case $SELECT_SRC in
         exit 1;
     ;;
 esac
+
+# Host to Run headless with remote mjpeg
+# --remote-mjpeg \
+# --remote-host 0.0.0.0 \
+#  --remote-port 8081 \
+#  --remote-path /cats.mjpg
+#
+#  http://127.0.0.1:8080/stream.mjpg
+#  http://<orange-pi-ip>:8080/stream.mjpg
+#
+
+
+case $2 in
+        headless)
+                OPTS="$OPTS  --remote-mjpeg --remote-host 0.0.0.0 --remote-port 8080 --remote-path /c100.mjpg"
+        ;;
+esac
+
 
 echo " ================ Src ================================== "
 echo "URIs: $src "

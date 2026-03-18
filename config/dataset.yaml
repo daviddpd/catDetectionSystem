@@ -1,5 +1,5 @@
 dataset:
-  output_root: imagebyclass-2026-03-08
+  output_root: imagebyclass-2026-03-15
   xml_root: /Users/dpd/Documents/projects/communitycats/imagebyclass
   image_root: /Users/dpd/Documents/projects/communitycats/imagebyclass
   classes:

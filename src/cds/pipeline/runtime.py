@@ -201,14 +201,14 @@ class DetectionRuntime:
                     "single window placement unavailable; using platform defaults"
                 )
 
-            if self._config.output.remote_enabled:
-                remote_sink = MjpegSink(
-                    host=self._config.output.remote_host,
-                    port=self._config.output.remote_port,
-                    path=self._config.output.remote_path,
-                )
-                remote_sink.open()
-                self._logger.info("remote sink enabled endpoint=%s", remote_sink.endpoint_url)
+        if self._config.output.remote_enabled:
+            remote_sink = MjpegSink(
+                host=self._config.output.remote_host,
+                port=self._config.output.remote_port,
+                path=self._config.output.remote_path,
+            )
+            remote_sink.open()
+            self._logger.info("remote sink enabled endpoint=%s", remote_sink.endpoint_url)
 
         event_sink = JsonEventSink(
             stdout_enabled=self._config.monitoring.event_stdout,

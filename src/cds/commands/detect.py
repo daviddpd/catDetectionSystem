@@ -96,7 +96,6 @@ def run_detect(args: Any, repo_root: Path) -> int:
 
     if config.output.headless:
         config.monitoring.event_stdout = False
-        config.output.remote_enabled = False
         if args.log_level is None and not args.quiet:
             config.monitoring.log_level = "WARNING"
 

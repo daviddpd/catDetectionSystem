@@ -209,9 +209,12 @@ for xmlfile in xmlfiles:
         if o["name"] not in classes:
             outliers.append(xmlfile)
 
+        try:
+            dest = os.path.join(args.dir, o["name"])
+        except KeyError:
+            dest = "None"
 
         if args.move is True:
-            dest = os.path.join(args.dir, o["name"])
             move_into(xmlfile, dest)
             move_into(jpgfile, dest)
             move_into(txtfile, dest)

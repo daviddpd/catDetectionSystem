@@ -316,9 +316,8 @@ def load_runtime_config(
     if cli_overrides:
         _merge_dict(merged, _lower_keys(cli_overrides))
 
-    # Headless hard-disable remote video sinks by requirement.
+    # Headless keeps stdout quiet by default, but remote MJPEG can still be enabled.
     if merged.get("output", {}).get("headless", False):
-        merged["output"]["remote_enabled"] = False
         merged["monitoring"]["event_stdout"] = False
 
     config = _normalize(merged, repo_root)

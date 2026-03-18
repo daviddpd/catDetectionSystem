@@ -51,9 +51,17 @@ def _add_infer_args(parser: argparse.ArgumentParser) -> None:
         help="Restrict detections to class label (repeatable)",
     )
 
-    parser.add_argument("--headless", action="store_true", help="Disable local/remote video and audio sinks")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Disable local display/audio sinks (remote MJPEG may still be enabled)",
+    )
     parser.add_argument("--window-name", help="OpenCV window title")
-    parser.add_argument("--remote-mjpeg", action="store_true", help="Enable MJPEG output sink")
+    parser.add_argument(
+        "--remote-mjpeg",
+        action="store_true",
+        help="Enable MJPEG output sink (works with --headless)",
+    )
     parser.add_argument("--remote-host", help="MJPEG listen host")
     parser.add_argument("--remote-port", type=int, help="MJPEG listen port")
     parser.add_argument("--remote-path", help="MJPEG URL path")
