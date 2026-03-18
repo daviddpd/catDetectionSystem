@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import platform
 import threading
 import time
@@ -36,6 +37,13 @@ def _is_video_source(source: str) -> bool:
         return Path(source).suffix.lower() in _VIDEO_EXTENSIONS
     except Exception:
         return False
+
+
+def _local_gui_available() -> bool:
+    system = platform.system().lower()
+    if system == "linux":
+        return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return True
 
 
 def _attach_detection_area_metrics(frame, detections: list[Detection]) -> None:
@@ -189,11 +197,17 @@ class DetectionRuntime:
         detect_eof = threading.Event()
         source_shape_logged = threading.Event()
         effective_input_logged = threading.Event()
+        local_gui_enabled = (not self._config.output.headless) and _local_gui_available()
 
         display_sink = None
         remote_sink = None
 
-        if not self._config.output.headless:
+        if not self._config.output.headless and not local_gui_enabled:
+            self._logger.warning(
+                "local GUI output disabled because no display session is available; continuing without local windows"
+            )
+
+        if local_gui_enabled:
             display_sink = DisplaySink(window_name=self._config.output.window_name)
             display_sink.open()
             if not place_single_window(display_sink.window_name):
@@ -224,7 +238,7 @@ class DetectionRuntime:
         event_sink_enabled = event_sink.enabled()
         triggers_enabled = triggers.enabled()
         detections_window_enabled = (
-            (not self._config.output.headless)
+            local_gui_enabled
             and bool(self._config.output.detections_window_enabled)
         )
         macos_detections_window_scale = None
