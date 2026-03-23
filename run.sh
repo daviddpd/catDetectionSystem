@@ -23,7 +23,7 @@ if [ $OS == "Darwin" ]; then
     MODEL="$WMD/exports/best.mlpackage"
     IMGSIZE=320 
     NMS=0.5
-    CONFIDENCE=0.52
+    CONFIDENCE=0.42
     MOUNTPT="/Volumes"
 else
     MODEL="$WMD/rknn/model.toolkit2.rknn"
@@ -93,7 +93,7 @@ case $SELECT_SRC in
     dir)
         if [ -n "$2" ]; then
             if [ -d "$2" ]; then
-                files=`find $2 -name '*.m[pk][4v]' |  xargs`
+                files=`find $2 -name '*.m[pk][4v]' | sort |  xargs`
                 src="$src $files"
             elif [ -f "$2" ]; then
                 src="$2"

@@ -40,7 +40,7 @@ remote_path = "/stream.mjpg"
 detections_window_enabled = true
 
 [triggers.audio]
-enabled = true
+enabled = false
 cooldown_seconds = 60.0
 frames_detect_on = 12
 
@@ -51,11 +51,11 @@ opossum = "assests/mixkit-video-game-mystery-alert-234.wav"
 raccoon = "assests/mixkit-police-short-whistle-615.wav"
 
 [triggers.hooks]
-enabled = false
-allowlist = ["/usr/local/bin/cds-hook"]
+enabled = true
+allowlist = ["tools/kodi.sh"]
 max_workers = 4
 # default: 10 consecutive inferred frames to latch ON
-frames_detect_on = 2
+frames_detect_on = 20
 # default: unset => 50% of frames_detect_on (minimum 1) to latch OFF
 frames_detect_off = ""
 # default: 0 disables area gate (pixels)
@@ -66,10 +66,10 @@ min_area_percent = 0.0
 
 
 [[triggers.hooks.rules]]
-classes = []
-command = ["/usr/local/bin/cds-hook", "cat"]
+classes = ["cat"]
+command = ["tools/kodi.sh", "cat"]
 timeout_seconds = 5.0
-cooldown_seconds = 60.0
+cooldown_seconds = 120.0
 payload_mode = "stdin"
 
 [monitoring]
