@@ -7,16 +7,10 @@ SELECT_SRC=$1
 # Working Model artifacts directory
 WMD="artifacts/models/x-community-cats-20260309-065444"
 WMD="artifacts/models/x-community-cats-20260313-002814"
+WMD="artifacts/models/x-community-cats-20260316-084322"
 
 OS=`uname -o`
 BENCHMARK=""
-
-if [ -n "$_CDS_BENCHMARK" ]; then
-    BENCHMARK="--benchmark"
-fi
-if [ -n "$_CDS_NO_EVENT" ]; then
-    NO_EVENT="--no-event-stdout"
-fi
 
 if [ $OS == "Darwin" ]; then
     MODEL="$WMD/exports/best.mlpackage"
@@ -108,9 +102,9 @@ for video in $src; do
     --imgsz $IMGSIZE --nms $NMS \
     --benchmark \
     --confidence 0.40 \
-    --confidence-min 0.52 \
+    --confidence-min 0.62 \
     --export-frames \
-    --export-frames-dir artifacts/exports/active-learning-2026.03.15 \
+    --export-frames-dir artifacts/exports/active-learning-2026.04.01 \
     --export-frames-sample-pct 1
 done
 

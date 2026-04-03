@@ -3,6 +3,8 @@ set -x
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELECT_SRC=$1
+SUBSELECT_SRC=$2
+
 
 # Working Model artifacts directory
 WMD="artifacts/models/x-community-cats-20260309-065444"
@@ -73,8 +75,15 @@ case $SELECT_SRC in
         src='rtsp://camera:GKouGCXCXmR2HzF@C100.dpdtech.com:554/stream1'
         ;;
     d1)
-        src='rtsp://thingino:thingino@ing-cinnado-d1-268c.local/ch0'
+        case $SUBSELECT_SRC in
+        ch1)
+            src='rtsp://thingino:thingino@ing-cinnado-d1-268c.local/ch1'
         ;;
+        *)
+            src='rtsp://thingino:thingino@ing-cinnado-d1-268c.local/ch0'
+        ;;
+        esac
+    ;;
     demo)
         for v in $demo_video_path; do
             if [ -f "$v" ]; then
