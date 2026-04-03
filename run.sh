@@ -39,7 +39,7 @@ else
     fi
     IMGSIZE=320 
     NMS=0.3
-    CONFIDENCE=0.72
+    CONFIDENCE=0.62
     MOUNTPT="/z"
 fi
 
@@ -68,7 +68,10 @@ case $SELECT_SRC in
             fi
         fi
         ;;
-    [cC]1|tplink)
+    [cC]4|tplink4)
+        src='rtsp://admin:cwvqYgGn4vjGN3oKYdVBj@c4.dpdtech.com:554/h264Preview_01_main'
+        ;;
+    [cC]1|tplink1)
         src='rtsp://admin:cwvqYgGn4vjGN3oKYdVBj@c1.dpdtech.com:554/h264Preview_01_main'
         ;;
     c100)
