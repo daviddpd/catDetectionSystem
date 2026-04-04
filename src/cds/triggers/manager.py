@@ -203,6 +203,7 @@ class TriggerManager:
                 "source": redact_uri_password(packet.source),
                 "backend": backend_name,
                 "label": det.label,
+                "class_id": det.class_id,
                 "confidence": det.confidence,
                 "bbox": [det.x1, det.y1, det.x2, det.y2],
                 "area_pixels": int(det.extra.get("area_pixels", det.width * det.height)),

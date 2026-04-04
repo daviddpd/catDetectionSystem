@@ -93,9 +93,14 @@ min_area_percent = 0.0
 
 [[triggers.hooks.rules]]
 classes = ["cat"]
-command = ["/usr/local/bin/cds-hook", "cat"]
+command = ["/usr/local/bin/cds-hook", "{label}"]
 timeout_seconds = 5.0
 cooldown_seconds = 10.0
+# command args can interpolate payload fields:
+# {label} {class_id} {confidence:.2f} {frame_id} {source} {backend}
+# {bbox_x1} {bbox_y1} {bbox_x2} {bbox_y2} {bbox_width} {bbox_height}
+# payload_mode = "stdin" sends the full JSON payload on stdin
+# payload_mode = "env" exports CDS_EVENT_JSON and flattened CDS_* variables
 payload_mode = "stdin"
 
 [monitoring]

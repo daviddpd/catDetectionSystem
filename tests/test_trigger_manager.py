@@ -163,6 +163,7 @@ class TriggerManagerTests(unittest.TestCase):
                 payload.get("source"),
                 "rtsp://camera-user:***@example.local:554/live/main",
             )
+            self.assertEqual(payload.get("class_id"), 0)
         finally:
             manager.close()
 

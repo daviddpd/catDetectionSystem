@@ -180,6 +180,126 @@ Current scope:
 - It assumes the exported model follows the same single-output detect head layout as the paired ONNX export.
 - If you convert a different architecture or a custom post-processing graph, the RKNN output decoder may need to be adapted.
 
+## Hook Cookbook
+
+Trigger hooks can now pass CDS metadata either as command arguments, JSON on stdin, or flattened environment variables.
+
+Basic pattern:
+
+```toml
+[triggers.hooks]
+enabled = true
+allowlist = ["tools/kodi.sh"]
+
+[[triggers.hooks.rules]]
+classes = ["cat"]
+command = ["tools/kodi.sh", "{label}"]
+timeout_seconds = 5.0
+cooldown_seconds = 10.0
+payload_mode = "stdin"
+```
+
+### 1. Pass the detected class as an argument
+
+```toml
+[[triggers.hooks.rules]]
+classes = ["cat", "opossum", "skunk"]
+command = ["tools/kodi.sh", "{label}"]
+payload_mode = "stdin"
+```
+
+This keeps your current simple shell-script workflow, but now the class comes from CDS instead of being hard-coded in config.
+
+### 2. Pass more metadata as command arguments
+
+```toml
+[[triggers.hooks.rules]]
+classes = ["cat", "opossum", "skunk"]
+command = [
+  "tools/kodi.sh",
+  "{label}",
+  "{confidence:.2f}",
+  "{frame_id}",
+  "{backend}",
+]
+payload_mode = "stdin"
+```
+
+### 3. Read the full payload from stdin
+
+```toml
+[[triggers.hooks.rules]]
+classes = ["cat"]
+command = ["tools/hook-json.py"]
+payload_mode = "stdin"
+```
+
+Example `tools/hook-json.py`:
+
+```python
+#!/usr/bin/env python3
+import json
+import sys
+
+payload = json.load(sys.stdin)
+print(payload["label"], payload["confidence"], payload["source"])
+```
+
+### 4. Read metadata from environment variables
+
+```toml
+[[triggers.hooks.rules]]
+classes = ["cat"]
+command = ["tools/kodi.sh", "{label}"]
+payload_mode = "env"
+```
+
+Example `tools/kodi.sh`:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "label=$CDS_LABEL conf=$CDS_CONFIDENCE source=$CDS_SOURCE frame=$CDS_FRAME_ID"
+```
+
+When `payload_mode = "env"`, CDS exports:
+- `CDS_EVENT_JSON`
+- `CDS_TS`
+- `CDS_LABEL`
+- `CDS_CLASS_ID`
+- `CDS_CONFIDENCE`
+- `CDS_FRAME_ID`
+- `CDS_SOURCE`
+- `CDS_BACKEND`
+- `CDS_AREA_PIXELS`
+- `CDS_AREA_PERCENT`
+- `CDS_BBOX_X1`, `CDS_BBOX_Y1`, `CDS_BBOX_X2`, `CDS_BBOX_Y2`
+- `CDS_BBOX_WIDTH`, `CDS_BBOX_HEIGHT`
+
+### Command placeholder fields
+
+Command arguments support Python-style `str.format` placeholders, so format specifiers like `{confidence:.2f}` work.
+
+Available placeholders:
+- `{label}`
+- `{class_id}`
+- `{confidence}`
+- `{frame_id}`
+- `{source}`
+- `{backend}`
+- `{ts}`
+- `{area_pixels}`
+- `{area_percent}`
+- `{bbox_x1}`, `{bbox_y1}`, `{bbox_x2}`, `{bbox_y2}`
+- `{bbox_width}`, `{bbox_height}`
+
+Notes:
+- `allowlist` must match the executable path in `command[0]`.
+- `classes = [...]` still controls which detections can activate the rule.
+- `payload_mode = "stdin"` sends the full JSON payload on stdin.
+- `payload_mode = "env"` sends the same payload in `CDS_EVENT_JSON` plus flattened `CDS_*` variables.
+
 ## Stage 2 Required Class Set
 
 Minimum canonical classes:
