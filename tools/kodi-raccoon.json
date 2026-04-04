@@ -1,0 +1,10 @@
+{   
+    "jsonrpc": "2.0",
+    "method": "GUI.ShowNotification",
+    "params":
+        {
+            "title":"catDetectionSystem",
+            "message":"!! Raccoon Raccoon Detected !!"
+        },
+    "id": 1
+} 
