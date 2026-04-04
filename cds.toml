@@ -51,7 +51,7 @@ opossum = "assests/mixkit-video-game-mystery-alert-234.wav"
 raccoon = "assests/mixkit-police-short-whistle-615.wav"
 
 [triggers.hooks]
-enabled = false
+enabled = true
 allowlist = ["tools/kodi.sh"]
 max_workers = 4
 # default: 10 consecutive inferred frames to latch ON
@@ -66,8 +66,9 @@ min_area_percent = 0.0
 
 
 [[triggers.hooks.rules]]
-classes = ["cat"]
-command = ["tools/kodi.sh", "cat"]
+classes = ["cat", "raccoon", "opossum", "skunk", "dog", "person"]
+command = ["tools/kodi.sh", "{label}"]
+payload_mode = "env"
 timeout_seconds = 5.0
 cooldown_seconds = 120.0
 payload_mode = "stdin"
