@@ -71,7 +71,6 @@ command = ["tools/kodi.sh", "{label}"]
 payload_mode = "env"
 timeout_seconds = 5.0
 cooldown_seconds = 120.0
-payload_mode = "stdin"
 
 [monitoring]
 json_logs = false
