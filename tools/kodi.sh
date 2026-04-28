@@ -20,8 +20,10 @@ esac
 
 curl -X POST -H "Content-Type: application/json" \
     -d @${FILE} http://kodi:kodi@kodi-main:8080/jsonrpc
+curl -X POST -H "Content-Type: application/json" \
+    -d @${FILE} http://kodi:kodi@kodi-br:8080/jsonrpc
 
-if [ -x "${SCRIPT_DIR}/.env/bin/matrix-commander" ]; then
-    matrix-commander -m "$MSG" --user @daviddpd:matrix.org
+if [ -x "${SCRIPT_DIR}/../.env/bin/matrix-commander" ]; then
+    matrix-commander -m "$MSG" --user @daviddpd:matrix.org -c $HOME/.config/matrix-commander/credentials.json -s $HOME/.config/matrix-commander/store 
 fi
 
